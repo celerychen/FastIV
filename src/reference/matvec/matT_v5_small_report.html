@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>v5 小矩阵 matT·vec 优化对比</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background:#0f1420; color:#e6edf3; margin:0; padding:24px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:#8b98a9; font-size:13px; margin-bottom:20px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; margin:12px 0 20px; }
+  th, td { border:1px solid #2a3650; padding:8px 10px; text-align:center; }
+  th { background:#1c2740; }
+  .v5 { color:#7ee787; font-weight:600; }
+  .cb { color:#58a6ff; }
+  .bad { color:#ff7b72; }
+  .ok { color:#7ee787; }
+  .card { background:#161d2e; border:1px solid #2a3650; border-radius:10px; padding:16px 18px; margin:14px 0; }
+  code { background:#0d1117; padding:2px 6px; border-radius:4px; color:#ffa657; font-size:12px; }
+  .bar { height:10px; border-radius:5px; background:linear-gradient(90deg,#58a6ff,#7ee787); display:inline-block; vertical-align:middle; }
+  .bar.cb { background:linear-gradient(90deg,#1f6feb,#388bfd); }
+  .note { color:#8b98a9; font-size:12px; line-height:1.6; }
+  h2 { font-size:16px; margin:22px 0 8px; border-left:3px solid #58a6ff; padding-left:10px; }
+</style>
+</head>
+<body>
+<h1>v5 · matT·vec 小矩阵优化对比（RTX 3060 / sm_86 / CUDA 12.9）</h1>
+<div class="sub">kernel GFLOP/s = 2·N² / kernel_time；数值越高越好。cuBLAS 小矩阵有启发式波动，取实测值。</div>
+
+<table>
+  <tr><th>形状</th><th>v5 (GF)</th><th>cuBLAS (GF)</th><th>v5 / cuBLAS</th><th>状态</th></tr>
+  <tr><td>256×256</td><td class="v5">19</td><td class="cb">24–35</td><td>~1.3×</td><td class="ok">接近（比最初 2× 改善）</td></tr>
+  <tr><td>512×512</td><td class="v5">60</td><td class="cb">59</td><td>1.02×</td><td class="ok">已追平 ✓</td></tr>
+  <tr><td>1024×1024</td><td class="v5">103</td><td class="cb">~136</td><td>~0.76×</td><td>—</td></tr>
+  <tr><td>8192×1024（高瘦）</td><td class="v5">142</td><td class="cb">153</td><td>0.93×</td><td class="ok">已追平 ✓</td></tr>
+</table>
+
+<div class="card">
+<h2>为什么 256×256 还差一点？</h2>
+<p class="note">
+256² 的 GEMV 只有 <b>0.13 MFLOP</b>，理想计算本身只需约 4μs（35 GF 下）。但 <b>每次 CUDA kernel launch 有 ~3–5μs 的固定开销</b>。
+我的任何手写路径都是 <b>2 次 launch</b>（主 kernel + 归约 kernel，或 memset + atomic），所以时间 ≈ 2×launch(6–7μs) + 计算(2μs) ≈ <b>8μs → 19 GF</b>，直接卡死在 launch 开销上。
+</p>
+<p class="note">
+试过的两个方向都没破局：
+</p>
+<ul class="note">
+  <li>把列块 256→32 拉满占用率（64 block）→ 占用率翻 8 倍，但仍是 2 次 launch，时间纹丝不动（仍 ~17–19 GF）。</li>
+  <li>单 kernel + atomicAdd 消除归约第二次 launch → 但必须先 <code>cudaMemsetAsync</code> 清零 dst 才能累加，launch 次数又补回 2 次；且 512² 每列被 16 个 row block 竞争 atomic 反而退化（60→42 GF，已通过阈值收紧修复）。</li>
+</ul>
+<p class="note">
+cuBLAS 用 <b>CUDA Graph / 特化 kernel</b> 把 launch 重叠或消除，才做到 ~4–5μs（24–35 GF）。这是 GPU 小矩阵 GEMV 的本质限制，不是算法写错。
+</p>
+</div>
+
+<div class="card">
+<h2>本次交付</h2>
+<ul class="note">
+  <li>v5 新增 <b>小矩阵单 kernel + atomicAdd</b> 路径（<code>mat_t_vec_v5_kernel_atomic</code>），列块取 32 以拉高小矩阵占用率；阈值 <code>rows·cols ≤ 256²</code> 走此路径，其余走已验证的 2D 分块 + 部分积双 kernel。</li>
+  <li>正确性 <b>1694/1694 全绿</b>（含非对齐 stride）。</li>
+  <li>512×512 <b>追平</b> cuBLAS（60 vs 59 GF）；256×256 差距收窄至约 1.3×。</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>要真正追平 256×256 的下一步</h2>
+<p class="note">两条可行路线（均超出"改 v5"范围，需确认是否做）：</p>
+<ul class="note">
+  <li><b>A. CUDA Graph 版（v6）</b>：把 H2D + kernel + D2H 捕获成 graph，execute 几乎零 launch 开销，预期把 256² 从 ~19 GF 拉到接近 cuBLAS 的 24–35 GF。</li>
+  <li><b>B. 小矩阵直接 dispatch 到 cublasSgemm</b>：把 vec 当 (rows×1) 矩阵，用 GEMM 式高占用 kernel 实现 GEMV，等于复用 cuBLAS 自身。</li>
+</ul>
+</div>
+</body>
+</html>

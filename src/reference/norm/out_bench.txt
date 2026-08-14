@@ -1,0 +1,25 @@
+===== L2 范数 性能/精度对比 (AVX2, /O2) =====
+方法                    耗时        吞吐      提速   相对误差
+
+[1M (4 MB)]
+  two-pass(基准)           1.531 ms      684.8 M/s    1.02x  rel=0.000e+00
+  two-pass-avx-v0            0.242 ms     4333.4 M/s    6.45x  rel=1.839e-04
+  scalar-single              0.761 ms     1377.9 M/s    2.05x  rel=0.000e+00
+  avx2-single+fast_div       0.219 ms     4795.5 M/s    7.13x  rel=3.385e-03
+  avx2-single+native         0.301 ms     3485.9 M/s    5.19x  rel=1.839e-04
+
+[4M (16 MB)]
+  two-pass(基准)           6.154 ms      681.6 M/s    1.04x  rel=0.000e+00
+  two-pass-avx-v0            1.010 ms     4152.4 M/s    6.35x  rel=1.226e-03
+  scalar-single              3.044 ms     1377.8 M/s    2.11x  rel=0.000e+00
+  avx2-single+fast_div       0.956 ms     4386.9 M/s    6.71x  rel=1.311e-02
+  avx2-single+native         1.196 ms     3506.8 M/s    5.37x  rel=1.226e-03
+
+[16M (64 MB)]
+  two-pass(基准)          25.157 ms      666.9 M/s    1.00x  rel=0.000e+00
+  two-pass-avx-v0            6.532 ms     2568.4 M/s    3.83x  rel=8.366e-03
+  scalar-single             12.527 ms     1339.3 M/s    2.00x  rel=0.000e+00
+  avx2-single+fast_div       5.657 ms     2966.0 M/s    4.43x  rel=4.929e-02
+  avx2-single+native         5.995 ms     2798.4 M/s    4.18x  rel=8.366e-03
+
+(注：提速 = two-pass 耗时 / 本方法耗时；rel = 相对 two-pass 参考的相对误差)

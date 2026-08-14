@@ -1,0 +1,25 @@
+# ===== FastIV .gitignore =====
+
+# Per user request: qwen_from_scratch is excluded from this push (matches at any depth)
+qwen_from_scratch/
+
+# Build intermediates
+obj/
+*.exe
+*.obj
+*.o
+*.log
+
+# Agent / local tooling memory (not project source)
+.workbuddy/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Large binary assets excluded from git (kept on disk)
+*.zip
+*.jpg
+*.jpeg
+*.png
+*.gif

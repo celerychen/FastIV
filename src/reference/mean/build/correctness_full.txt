@@ -1,0 +1,73 @@
+=====================================================================
+  mean/variance 正确性与数值精度测试
+  参考基准: long double (x87 80-bit) 两趟法 + Kahan 补偿求和
+  被测实现: 8 个 | n 取值: 27 组 | 数据分布: 10 种 | 含非对齐路径
+=====================================================================
+
+--- 逐用例扫描（仅打印失败项）---
+  [FAIL] scalar_sumsq     offset1e6  n=2       unaligned  方差相对误差 > 100%  (mean=1e+06 var=65536, ref_mean=999999.875 ref_var=0.140625)
+  [FAIL] scalar_sumsq     offset1e6  n=15      unaligned  方差相对误差 > 100%  (mean=1e+06 var=65536, ref_mean=999999.9083 ref_var=1.190034722)
+  [FAIL] scalar_sumsq     offset1e6  n=17       方差相对误差 > 100%  (mean=1e+06 var=65536, ref_mean=999999.7831 ref_var=0.6461937716)
+  [FAIL] serial_welford   dynrange   n=2       unaligned  Inf  (mean=5e+19 var=inf, ref_mean=5.0000001e+19 ref_var=2.5000001e+39)
+  [FAIL] avx2_welford     dynrange   n=2       unaligned  Inf  (mean=5e+19 var=inf, ref_mean=5.0000001e+19 ref_var=2.5000001e+39)
+  [FAIL] serial_autovec   dynrange   n=2       unaligned  Inf  (mean=5e+19 var=inf, ref_mean=5.0000001e+19 ref_var=2.5000001e+39)
+  [FAIL] avx2_welford_o3  dynrange   n=2       unaligned  Inf  (mean=5e+19 var=inf, ref_mean=5.0000001e+19 ref_var=2.5000001e+39)
+  [FAIL] avx2_welford_opt_f dynrange   n=2       unaligned  Inf  (mean=5e+19 var=inf, ref_mean=5.0000001e+19 ref_var=2.5000001e+39)
+  [FAIL] avx2_welford_opt_d dynrange   n=2       unaligned  Inf  (mean=5e+19 var=inf, ref_mean=5.0000001e+19 ref_var=2.5000001e+39)
+  [FAIL] avx2_welford_fma1 dynrange   n=2       unaligned  Inf  (mean=5e+19 var=inf, ref_mean=5.0000001e+19 ref_var=2.5000001e+39)
+  [FAIL] serial_welford   dynrange   n=3        Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford     dynrange   n=3        Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] serial_autovec   dynrange   n=3        Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_o3  dynrange   n=3        Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_opt_f dynrange   n=3        Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_opt_d dynrange   n=3        Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_fma1 dynrange   n=3        Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] serial_welford   dynrange   n=3       unaligned  Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford     dynrange   n=3       unaligned  Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] serial_autovec   dynrange   n=3       unaligned  Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_o3  dynrange   n=3       unaligned  Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_opt_f dynrange   n=3       unaligned  Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_opt_d dynrange   n=3       unaligned  Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+  [FAIL] avx2_welford_fma1 dynrange   n=3       unaligned  Inf  (mean=3.33333e+19 var=inf, ref_mean=3.3333334e+19 ref_var=2.222222311e+39)
+
+--- 精度汇总（相对误差最大值，越小越好）---
+  实现             均值误差 方差误差 硬失败 最差用例
+  ------------------------------------------------------------------------------
+  serial_welford     3.906e-03    1.000e+00    49       offset1e6/n=2
+  avx2_welford       1.562e-02    1.000e+00    49       offset1e6/n=2
+  scalar_sumsq       4.427e-04    2.568e+08    64       offset1e6/n=100000/unaligned
+  serial_autovec     3.906e-03    1.000e+00    49       offset1e6/n=2
+  avx2_welford_o3    1.562e-02    1.000e+00    49       offset1e6/n=2
+  avx2_welford_opt_f 1.562e-02    1.000e+00    49       offset1e6/n=2
+  avx2_welford_opt_d 5.436e-08    5.841e-08    49       offset1e6/n=1024
+  avx2_welford_fma1  1.562e-02    1.000e+00    49       offset1e6/n=2
+
+--- 解析解校验 ---
+  常量数组方差为 0、等差数列方差 = (n^2-1)/12 —— 未列出者均通过
+
+--- 越界读检测（数组末尾紧贴 PAGE_NOACCESS 保护页）---
+  serial_welford   无越界读
+  avx2_welford     无越界读
+  scalar_sumsq     无越界读
+  serial_autovec   无越界读
+  avx2_welford_o3  无越界读
+  avx2_welford_opt_f 无越界读
+  avx2_welford_opt_d 无越界读
+  avx2_welford_fma1 无越界读
+  全部实现均未越界读取
+
+--- 数据分布说明 ---
+  zeros        除零 / NaN
+  const        解析解：方差必须为 0
+  ramp         解析解：方差 = (n^2-1)/12
+  uniform      常规路径
+  normal       常规路径
+  offset1e6    灾难性抵消（mean=1e6, sigma=1）
+  alt_pm1e6    符号抵消
+  outlier      M2 swamping
+  dynrange     大动态范围 1e-20 ~ 1e20
+  denormal     非规格化数慢路径
+
+=====================================================================
+  结论: 共 407 项硬失败，详见上方 [FAIL]
+=====================================================================
