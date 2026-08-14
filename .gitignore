@@ -1,5 +1,8 @@
 # ===== FastIV .gitignore =====
 
+# Per user request: reference code is excluded from this repo (matches at any depth)
+src/reference/
+
 # Per user request: qwen_from_scratch is excluded from this push (matches at any depth)
 qwen_from_scratch/
 
@@ -23,3 +26,12 @@ Thumbs.db
 *.jpeg
 *.png
 *.gif
+
+# API push temp scripts (contain token, never commit)
+_api_push.*
+_push.log
+_b.json
+_c.json
+_r.json
+_tree.json
+_tree_entries.jsonl
