@@ -1,0 +1,5 @@
+[DEBUG] reference two-pass : 3034.918945
+[DEBUG] avx2 fast-div      : 3024.645508  rel_err = 3.385078e-03
+[DEBUG] avx2 native-div    : 3035.477051  rel_err = 1.838947e-04
+[DEBUG] fast vs native diff: 1.083154e+01
+[DEBUG] t1 fast=22.561028 native=22.561028 ref=22.561028

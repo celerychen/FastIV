@@ -1,0 +1,9 @@
+# 编译产物 (可执行文件)
+bench_o2
+bench_o3
+conv2d_ref_test
+conv2d_v1_test
+conv2d_v2_test
+conv2d_v*_test
+v?_test
+*.o

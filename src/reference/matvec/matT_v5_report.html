@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>matT·vec 优化报告 (v3→v5 vs cuBLAS)</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; background: #0f1419; color: #e6e6e6; margin: 0; padding: 32px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #8b98a5; font-size: 13px; margin-bottom: 24px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 10px 12px; text-align: center; border-bottom: 1px solid #2a2f36; }
+  th { color: #8b98a5; font-weight: 600; background: #161b22; }
+  td.shape { color: #c9d1d9; font-weight: 600; }
+  .v3 { color: #f0883e; }
+  .v4 { color: #6e7681; }
+  .v5 { color: #3fb950; font-weight: 700; }
+  .cublas { color: #58a6ff; }
+  .target td { background: #1c2128; }
+  .target td.shape { color: #ffd33d; }
+  .note { margin-top: 22px; font-size: 13px; color: #8b98a5; line-height: 1.7; }
+  .note b { color: #c9d1d9; }
+  .chip { display:inline-block; padding:1px 7px; border-radius:4px; font-size:12px; }
+  .ok { background:#1a3326; color:#3fb950; }
+</style>
+</head>
+<body>
+  <h1>matT·vec 优化报告：v3 → v5 vs cuBLAS</h1>
+  <div class="sub">RTX 3060 / sm_86 / CUDA 12.9 &nbsp;·&nbsp; 单位 GF (GFLOP/s，越高越好) &nbsp;·&nbsp; 944 全部用例正确</div>
+
+  <table>
+    <thead>
+      <tr><th>形状 (rows×cols)</th><th>v3</th><th>v4</th><th>v5</th><th>cuBLAS</th><th>v5 / cuBLAS</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="shape">256×256</td><td class="v3">18</td><td class="v4">10</td><td class="v5">17</td><td class="cublas">35</td><td>49%</td></tr>
+      <tr><td class="shape">512×512</td><td class="v3">40</td><td class="v4">22</td><td class="v5">60</td><td class="cublas">72</td><td>83%</td></tr>
+      <tr><td class="shape">1024×1024</td><td class="v3">58</td><td class="v4">22</td><td class="v5">103</td><td class="cublas">136</td><td>76%</td></tr>
+      <tr><td class="shape">2048×2048</td><td class="v3">112</td><td class="v4">45</td><td class="v5">134</td><td class="cublas">158</td><td>85%</td></tr>
+      <tr><td class="shape">4096×4096</td><td class="v3">159</td><td class="v4">85</td><td class="v5">144</td><td class="cublas">159</td><td>91%</td></tr>
+      <tr><td class="shape">8192×8192</td><td class="v3">168</td><td class="v4">145</td><td class="v5">152</td><td class="cublas">165</td><td>92%</td></tr>
+      <tr><td class="shape">1024×8192</td><td class="v3">164</td><td class="v4">143</td><td class="v5">147</td><td class="cublas">160</td><td>92%</td></tr>
+      <tr class="target"><td class="shape">8192×1024 ★高瘦</td><td class="v3">62</td><td class="v4">23</td><td class="v5">142</td><td class="cublas">153</td><td><span class="chip ok">93%</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>根因：</b>旧版 matT 按"输出列"并行（一个 block 管 256 列），高瘦形状 cols 小 → block 极少（8192×1024 只有 4 个）→ 绝大多数 SM 空转。
+    纯输出并行的硬上限 = cols 个线程 = 32 个 warp，无论怎么切 block 都喂不饱 28 个 SM。<br>
+    <b>修法：</b>把收缩维（rows）也切成 2D 网格（COL_TILE=256，ROW_TILE=32，blockDim=256），总 warp 数从 32 暴增到 8192；
+    每个 block 算 [rowTile×colTile] 子块的部分积写入缓冲（仅占 A 的 1/rowTile ≤1MB，带宽可忽略），再由一个极轻归约核求和。
+    vec 段由全体线程并行搬入共享（非单线程串行），A 按行读（列连续 → 合并）。<br>
+    <b>结果：</b>高瘦形状 62→142 GF（<span class="chip ok">达 cuBLAS 93%</span>），方形/宽矩阵不倒退（144–152 GF，与 cuBLAS 同档）。mat·vec 复用 v4 内核已持平 cuBLAS。
+  </div>
+</body>
+</html>
