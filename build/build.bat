@@ -1,8 +1,9 @@
 @echo off
-REM build_darray.bat - build the FastIV correctness tests
+REM build.bat - build all FastIV correctness tests (Windows)
 REM   default: GCC (WinLibs 15.2.0)
-REM   usage: build_darray.bat msvc   -> build with MSVC
+REM   usage: build.bat msvc   -> build with MSVC
 REM
+REM macOS / Linux use build/Makefile instead.
 REM Layout (after the directory reshuffle):
 REM   public headers : api/*.h
 REM   implementations: src/ctensor/*.c

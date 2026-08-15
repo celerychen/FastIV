@@ -12,6 +12,7 @@ obj/
 *.obj
 *.o
 *.log
+build/test_*
 
 # Agent / local tooling memory (not project source)
 .workbuddy/
