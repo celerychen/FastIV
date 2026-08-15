@@ -1110,7 +1110,7 @@ void* fiv_create_tensor_header_from_tensor(void* tensor)
 // In-place is allowed (c may alias a or b) because the op is purely element-wise.
 // ---------------------------------------------------------------------------
 
-typedef enum {
+typedef enum : iv32u {
     FIV_BINOP_ADD = 0,
     FIV_BINOP_SUB,
     FIV_BINOP_MUL,

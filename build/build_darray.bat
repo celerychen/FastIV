@@ -14,6 +14,7 @@ set DDIR=%~dp0
 set API=%DDIR%..\api
 set SRC=%DDIR%..\src
 set CT=%SRC%\ctensor
+set MAT=%SRC%\mat
 set TEST=%SRC%\test
 set OBJ=%DDIR%..\obj
 set BIN=%DDIR%
@@ -26,20 +27,35 @@ set GCC="C:\winlibs-x86_64-posix-seh-gcc-15.2.0-mingw-w64msvcrt-13.0.0-r1\mingw6
 if "%1"=="msvc" goto msvc
 
 echo [GCC] compiling objects...
-%GCC% -O2 -I "%API%" -c "%CT%\fiv_common.c"    -o "%OBJ%\fiv_common.o"
-%GCC% -O2 -I "%API%" -c "%CT%\fiv_ctensor.c"   -o "%OBJ%\fiv_ctensor.o"
-%GCC% -O2 -I "%API%" -c "%CT%\fiv_binary_op.c" -o "%OBJ%\fiv_binary_op.o"
-%GCC% -O2 -I "%API%" -c "%TEST%\test_darray.c"  -o "%OBJ%\test_darray.o"
-%GCC% -O2 -I "%API%" -c "%TEST%\test_ctensor.c" -o "%OBJ%\test_ctensor.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%CT%\fiv_common.c"    -o "%OBJ%\fiv_common.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%CT%\fiv_ctensor.c"   -o "%OBJ%\fiv_ctensor.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%CT%\fiv_binary_op.c" -o "%OBJ%\fiv_binary_op.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%MAT%\fiv_mat_transpose.c" -o "%OBJ%\fiv_mat_transpose.o"
+%GCC% -std=c23 -O2 -I "%API%" -I "%MAT%" -c "%MAT%\fiv_mat_vec.c"  -o "%OBJ%\fiv_mat_vec.o"
+%GCC% -std=c23 -O2 -I "%API%" -I "%MAT%" -c "%MAT%\fiv_mat_mul.c"  -o "%OBJ%\fiv_mat_mul.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_darray.c"  -o "%OBJ%\test_darray.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_ctensor.c" -o "%OBJ%\test_ctensor.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_mat_transpose.c" -o "%OBJ%\test_mat_transpose.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_mat_vec.c"       -o "%OBJ%\test_mat_vec.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_mat_mul.c"       -o "%OBJ%\test_mat_mul.o"
 if errorlevel 1 (echo GCC compile FAILED & exit /b 1)
 
 echo [GCC] linking test_darray...
-%GCC% -O2 "%OBJ%\test_darray.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_darray.exe"
+%GCC% -std=c23 -O2 "%OBJ%\test_darray.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_darray.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_ctensor...
-%GCC% -O2 "%OBJ%\test_ctensor.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_ctensor.exe"
+%GCC% -std=c23 -O2 "%OBJ%\test_ctensor.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_ctensor.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
-echo [GCC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe
+echo [GCC] linking test_mat_transpose...
+%GCC% -std=c23 -O2 "%OBJ%\test_mat_transpose.o" "%OBJ%\fiv_mat_transpose.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_transpose.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [GCC] linking test_mat_vec...
+%GCC% -std=c23 -O2 "%OBJ%\test_mat_vec.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_vec.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [GCC] linking test_mat_mul...
+%GCC% -std=c23 -O2 "%OBJ%\test_mat_mul.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_mul.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [GCC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe, %BIN%\test_mat_transpose.exe, %BIN%\test_mat_vec.exe, %BIN%\test_mat_mul.exe
 goto end
 
 :msvc
@@ -51,8 +67,14 @@ echo [MSVC] compiling objects...
 %CL% /utf-8 /O2 /I "%API%" /c "%CT%\fiv_common.c"    /Fo"%OBJ%\fiv_common.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%CT%\fiv_ctensor.c"   /Fo"%OBJ%\fiv_ctensor.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%CT%\fiv_binary_op.c" /Fo"%OBJ%\fiv_binary_op.obj"
+%CL% /utf-8 /O2 /I "%API%" /c "%MAT%\fiv_mat_transpose.c" /Fo"%OBJ%\fiv_mat_transpose.obj"
+%CL% /utf-8 /O2 /I "%API%" /I "%MAT%" /c "%MAT%\fiv_mat_vec.c"  /Fo"%OBJ%\fiv_mat_vec.obj"
+%CL% /utf-8 /O2 /I "%API%" /I "%MAT%" /c "%MAT%\fiv_mat_mul.c"  /Fo"%OBJ%\fiv_mat_mul.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_darray.c"  /Fo"%OBJ%\test_darray.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_ctensor.c" /Fo"%OBJ%\test_ctensor.obj"
+%CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_mat_transpose.c" /Fo"%OBJ%\test_mat_transpose.obj"
+%CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_mat_vec.c"       /Fo"%OBJ%\test_mat_vec.obj"
+%CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_mat_mul.c"       /Fo"%OBJ%\test_mat_mul.obj"
 if errorlevel 1 (echo MSVC compile FAILED & exit /b 1)
 
 echo [MSVC] linking test_darray...
@@ -61,7 +83,16 @@ if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [MSVC] linking test_ctensor...
 %CL% /utf-8 /O2 "%OBJ%\test_ctensor.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_ctensor.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
-echo [MSVC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe
+echo [MSVC] linking test_mat_transpose...
+%CL% /utf-8 /O2 "%OBJ%\test_mat_transpose.obj" "%OBJ%\fiv_mat_transpose.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_mat_transpose.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [MSVC] linking test_mat_vec...
+%CL% /utf-8 /O2 "%OBJ%\test_mat_vec.obj" "%OBJ%\fiv_mat_vec.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_mat_vec.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [MSVC] linking test_mat_mul...
+%CL% /utf-8 /O2 "%OBJ%\test_mat_mul.obj" "%OBJ%\fiv_mat_mul.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_mat_mul.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [MSVC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe, %BIN%\test_mat_transpose.exe, %BIN%\test_mat_vec.exe, %BIN%\test_mat_mul.exe
 
 :end
 endlocal
