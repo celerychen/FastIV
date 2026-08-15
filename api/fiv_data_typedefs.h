@@ -167,6 +167,7 @@ typedef iv16u   ivbf16;   // Fallback: store as uint16
 #endif
 
 #include <stdint.h>
+#include <stddef.h>
 
 /* Align pointer p up to the align boundary (align must be a power of two)
    usage: p = (iv8u*)FIV_PTR_ALIGN(p, FIV_STRIDE_ALIGN);
@@ -204,7 +205,7 @@ typedef iv16u   ivbf16;   // Fallback: store as uint16
 
 
 
-typedef enum {
+typedef enum : iv32u {
     FIV_RET_OK,
     FIV_RET_ERR_PARA,
     FIV_RET_ERR_MEM,
@@ -223,7 +224,7 @@ typedef enum {
 
 
 
-typedef enum {
+typedef enum :iv8u {
     FIV_8U1 = 0,
     FIV_8S1,
     FIV_16U1,

@@ -12,7 +12,7 @@
 #ifndef _FIV_CTENSOR_H_
 #define _FIV_CTENSOR_H_
 
-#include <stddef.h>
+
 #include "fiv_data_typedefs.h"
 
 #ifdef __cplusplus
@@ -21,7 +21,8 @@ extern "C" {
 
 
 /* ============================ Tensor IDs ============================ */
-typedef enum {
+/* C23 fixed underlying type: id is stored as a single byte, not an int */
+typedef enum : iv8u {
     FIV_ID_START  = 0,
     FIV_ID_TENSOR1D,
     FIV_ID_TENSOR2D,
@@ -36,7 +37,7 @@ typedef enum {
 /* reference / data_continue / element_bytes share memory with meta_info[4] */
 #define FIV_META_UNION \
     union { \
-        struct { iv8u reference, data_continue, element_bytes; }; \
+        struct { iv8u reference, data_continue, element_bytes, color_space_type; }; \
         struct { iv8u meta_info[4]; }; \
     }
 
@@ -138,8 +139,8 @@ typedef struct {
 
 
 /* ============================== Aliases ============================== */
-typedef fiv_tensor2d mat;
-typedef fiv_tensor1d vec;
+typedef fiv_tensor2d fiv_mat;
+typedef fiv_tensor1d fiv_vec;
 
 
 /* ===================== Create / release (1D~5D) ===================== */
