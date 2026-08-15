@@ -163,46 +163,39 @@ static void fiv_small_matrix_mul_matrix_real32(
 			}
 #elif defined(FIV_USE_ARM_NEON)
 			for (; j <= cols_b - 8; j += 8) {
-				float32x4_t b0_0 = vld1q_f32(&ptr_b[0][j]);
-				float32x4_t b0_1 = vld1q_f32(&ptr_b[0][j + 4]);
-				float32x4_t b1_0 = vld1q_f32(&ptr_b[1][j]);
-				float32x4_t b1_1 = vld1q_f32(&ptr_b[1][j + 4]);
+				float32x4x2_t b0 = { { vld1q_f32(&ptr_b[0][j]),     vld1q_f32(&ptr_b[0][j + 4]) } };
+				float32x4x2_t b1 = { { vld1q_f32(&ptr_b[1][j]),     vld1q_f32(&ptr_b[1][j + 4]) } };
+				float32x4x2_t c0 = { { vld1q_f32(&ptr_c[0][j]),     vld1q_f32(&ptr_c[0][j + 4]) } };
+				float32x4x2_t c1 = { { vld1q_f32(&ptr_c[1][j]),     vld1q_f32(&ptr_c[1][j + 4]) } };
+				float32x4x2_t c2 = { { vld1q_f32(&ptr_c[2][j]),     vld1q_f32(&ptr_c[2][j + 4]) } };
+				float32x4x2_t c3 = { { vld1q_f32(&ptr_c[3][j]),     vld1q_f32(&ptr_c[3][j + 4]) } };
 
-				float32x4_t c0_0 = vld1q_f32(&ptr_c[0][j]);
-				float32x4_t c0_1 = vld1q_f32(&ptr_c[0][j + 4]);
-				float32x4_t c1_0 = vld1q_f32(&ptr_c[1][j]);
-				float32x4_t c1_1 = vld1q_f32(&ptr_c[1][j + 4]);
-				float32x4_t c2_0 = vld1q_f32(&ptr_c[2][j]);
-				float32x4_t c2_1 = vld1q_f32(&ptr_c[2][j + 4]);
-				float32x4_t c3_0 = vld1q_f32(&ptr_c[3][j]);
-				float32x4_t c3_1 = vld1q_f32(&ptr_c[3][j + 4]);
+				c0.val[0] = vmlaq_n_f32(c0.val[0], b0.val[0], t_a[0]);
+				c0.val[1] = vmlaq_n_f32(c0.val[1], b0.val[1], t_a[0]);
+				c1.val[0] = vmlaq_n_f32(c1.val[0], b0.val[0], t_a[1]);
+				c1.val[1] = vmlaq_n_f32(c1.val[1], b0.val[1], t_a[1]);
+				c2.val[0] = vmlaq_n_f32(c2.val[0], b0.val[0], t_a[2]);
+				c2.val[1] = vmlaq_n_f32(c2.val[1], b0.val[1], t_a[2]);
+				c3.val[0] = vmlaq_n_f32(c3.val[0], b0.val[0], t_a[3]);
+				c3.val[1] = vmlaq_n_f32(c3.val[1], b0.val[1], t_a[3]);
 
-				c0_0 = vmlaq_n_f32(c0_0, b0_0, t_a[0]);
-				c0_1 = vmlaq_n_f32(c0_1, b0_1, t_a[0]);
-				c1_0 = vmlaq_n_f32(c1_0, b0_0, t_a[1]);
-				c1_1 = vmlaq_n_f32(c1_1, b0_1, t_a[1]);
-				c2_0 = vmlaq_n_f32(c2_0, b0_0, t_a[2]);
-				c2_1 = vmlaq_n_f32(c2_1, b0_1, t_a[2]);
-				c3_0 = vmlaq_n_f32(c3_0, b0_0, t_a[3]);
-				c3_1 = vmlaq_n_f32(c3_1, b0_1, t_a[3]);
+				c0.val[0] = vmlaq_n_f32(c0.val[0], b1.val[0], t_a[4]);
+				c0.val[1] = vmlaq_n_f32(c0.val[1], b1.val[1], t_a[4]);
+				c1.val[0] = vmlaq_n_f32(c1.val[0], b1.val[0], t_a[5]);
+				c1.val[1] = vmlaq_n_f32(c1.val[1], b1.val[1], t_a[5]);
+				c2.val[0] = vmlaq_n_f32(c2.val[0], b1.val[0], t_a[6]);
+				c2.val[1] = vmlaq_n_f32(c2.val[1], b1.val[1], t_a[6]);
+				c3.val[0] = vmlaq_n_f32(c3.val[0], b1.val[0], t_a[7]);
+				c3.val[1] = vmlaq_n_f32(c3.val[1], b1.val[1], t_a[7]);
 
-				c0_0 = vmlaq_n_f32(c0_0, b1_0, t_a[4]);
-				c0_1 = vmlaq_n_f32(c0_1, b1_1, t_a[4]);
-				c1_0 = vmlaq_n_f32(c1_0, b1_0, t_a[5]);
-				c1_1 = vmlaq_n_f32(c1_1, b1_1, t_a[5]);
-				c2_0 = vmlaq_n_f32(c2_0, b1_0, t_a[6]);
-				c2_1 = vmlaq_n_f32(c2_1, b1_1, t_a[6]);
-				c3_0 = vmlaq_n_f32(c3_0, b1_0, t_a[7]);
-				c3_1 = vmlaq_n_f32(c3_1, b1_1, t_a[7]);
-
-				vst1q_f32(&ptr_c[0][j], c0_0);
-				vst1q_f32(&ptr_c[0][j + 4], c0_1);
-				vst1q_f32(&ptr_c[1][j], c1_0);
-				vst1q_f32(&ptr_c[1][j + 4], c1_1);
-				vst1q_f32(&ptr_c[2][j], c2_0);
-				vst1q_f32(&ptr_c[2][j + 4], c2_1);
-				vst1q_f32(&ptr_c[3][j], c3_0);
-				vst1q_f32(&ptr_c[3][j + 4], c3_1);
+				vst1q_f32(&ptr_c[0][j],     c0.val[0]);
+				vst1q_f32(&ptr_c[0][j + 4], c0.val[1]);
+				vst1q_f32(&ptr_c[1][j],     c1.val[0]);
+				vst1q_f32(&ptr_c[1][j + 4], c1.val[1]);
+				vst1q_f32(&ptr_c[2][j],     c2.val[0]);
+				vst1q_f32(&ptr_c[2][j + 4], c2.val[1]);
+				vst1q_f32(&ptr_c[3][j],     c3.val[0]);
+				vst1q_f32(&ptr_c[3][j + 4], c3.val[1]);
 			}
 #endif
 			for (; j < cols_b; j++){
@@ -251,35 +244,29 @@ static void fiv_small_matrix_mul_matrix_real32(
 			}
 #elif defined(FIV_USE_ARM_NEON)
 			for (; j <= cols_b - 8; j += 8) {
-				float32x4_t b_0 = vld1q_f32(&ptr_b[j]);
-				float32x4_t b_1 = vld1q_f32(&ptr_b[j + 4]);
+				float32x4x2_t b  = { { vld1q_f32(&ptr_b[j]),         vld1q_f32(&ptr_b[j + 4]) } };
+				float32x4x2_t c0 = { { vld1q_f32(&ptr_c[0][j]),     vld1q_f32(&ptr_c[0][j + 4]) } };
+				float32x4x2_t c1 = { { vld1q_f32(&ptr_c[1][j]),     vld1q_f32(&ptr_c[1][j + 4]) } };
+				float32x4x2_t c2 = { { vld1q_f32(&ptr_c[2][j]),     vld1q_f32(&ptr_c[2][j + 4]) } };
+				float32x4x2_t c3 = { { vld1q_f32(&ptr_c[3][j]),     vld1q_f32(&ptr_c[3][j + 4]) } };
 
-				float32x4_t c0_0 = vld1q_f32(&ptr_c[0][j]);
-				float32x4_t c0_1 = vld1q_f32(&ptr_c[0][j + 4]);
-				float32x4_t c1_0 = vld1q_f32(&ptr_c[1][j]);
-				float32x4_t c1_1 = vld1q_f32(&ptr_c[1][j + 4]);
-				float32x4_t c2_0 = vld1q_f32(&ptr_c[2][j]);
-				float32x4_t c2_1 = vld1q_f32(&ptr_c[2][j + 4]);
-				float32x4_t c3_0 = vld1q_f32(&ptr_c[3][j]);
-				float32x4_t c3_1 = vld1q_f32(&ptr_c[3][j + 4]);
+				c0.val[0] = vmlaq_n_f32(c0.val[0], b.val[0], t_a[0]);
+				c0.val[1] = vmlaq_n_f32(c0.val[1], b.val[1], t_a[0]);
+				c1.val[0] = vmlaq_n_f32(c1.val[0], b.val[0], t_a[1]);
+				c1.val[1] = vmlaq_n_f32(c1.val[1], b.val[1], t_a[1]);
+				c2.val[0] = vmlaq_n_f32(c2.val[0], b.val[0], t_a[2]);
+				c2.val[1] = vmlaq_n_f32(c2.val[1], b.val[1], t_a[2]);
+				c3.val[0] = vmlaq_n_f32(c3.val[0], b.val[0], t_a[3]);
+				c3.val[1] = vmlaq_n_f32(c3.val[1], b.val[1], t_a[3]);
 
-				c0_0 = vmlaq_n_f32(c0_0, b_0, t_a[0]);
-				c0_1 = vmlaq_n_f32(c0_1, b_1, t_a[0]);
-				c1_0 = vmlaq_n_f32(c1_0, b_0, t_a[1]);
-				c1_1 = vmlaq_n_f32(c1_1, b_1, t_a[1]);
-				c2_0 = vmlaq_n_f32(c2_0, b_0, t_a[2]);
-				c2_1 = vmlaq_n_f32(c2_1, b_1, t_a[2]);
-				c3_0 = vmlaq_n_f32(c3_0, b_0, t_a[3]);
-				c3_1 = vmlaq_n_f32(c3_1, b_1, t_a[3]);
-
-				vst1q_f32(&ptr_c[0][j], c0_0);
-				vst1q_f32(&ptr_c[0][j + 4], c0_1);
-				vst1q_f32(&ptr_c[1][j], c1_0);
-				vst1q_f32(&ptr_c[1][j + 4], c1_1);
-				vst1q_f32(&ptr_c[2][j], c2_0);
-				vst1q_f32(&ptr_c[2][j + 4], c2_1);
-				vst1q_f32(&ptr_c[3][j], c3_0);
-				vst1q_f32(&ptr_c[3][j + 4], c3_1);
+				vst1q_f32(&ptr_c[0][j],     c0.val[0]);
+				vst1q_f32(&ptr_c[0][j + 4], c0.val[1]);
+				vst1q_f32(&ptr_c[1][j],     c1.val[0]);
+				vst1q_f32(&ptr_c[1][j + 4], c1.val[1]);
+				vst1q_f32(&ptr_c[2][j],     c2.val[0]);
+				vst1q_f32(&ptr_c[2][j + 4], c2.val[1]);
+				vst1q_f32(&ptr_c[3][j],     c3.val[0]);
+				vst1q_f32(&ptr_c[3][j + 4], c3.val[1]);
 			}
 #endif
           for (; j < cols_b; j++){
@@ -629,46 +616,39 @@ static void fiv_small_matrix_t_mul_matrix_real32(
 			}
 #elif defined(FIV_USE_ARM_NEON)
 			for (; j <= cols_b - 8; j += 8){
-				float32x4_t b1_0 = vld1q_f32(&ptr_b_line1[j]);
-				float32x4_t b1_1 = vld1q_f32(&ptr_b_line1[j + 4]);
-				float32x4_t b2_0 = vld1q_f32(&ptr_b_line2[j]);
-				float32x4_t b2_1 = vld1q_f32(&ptr_b_line2[j + 4]);
+				float32x4x2_t b1 = { { vld1q_f32(&ptr_b_line1[j]),     vld1q_f32(&ptr_b_line1[j + 4]) } };
+				float32x4x2_t b2 = { { vld1q_f32(&ptr_b_line2[j]),     vld1q_f32(&ptr_b_line2[j + 4]) } };
+				float32x4x2_t c0 = { { vld1q_f32(&ptr_c_lines[0][j]), vld1q_f32(&ptr_c_lines[0][j + 4]) } };
+				float32x4x2_t c1 = { { vld1q_f32(&ptr_c_lines[1][j]), vld1q_f32(&ptr_c_lines[1][j + 4]) } };
+				float32x4x2_t c2 = { { vld1q_f32(&ptr_c_lines[2][j]), vld1q_f32(&ptr_c_lines[2][j + 4]) } };
+				float32x4x2_t c3 = { { vld1q_f32(&ptr_c_lines[3][j]), vld1q_f32(&ptr_c_lines[3][j + 4]) } };
 
-				float32x4_t c0_0 = vld1q_f32(&ptr_c_lines[0][j]);
-				float32x4_t c0_1 = vld1q_f32(&ptr_c_lines[0][j + 4]);
-				float32x4_t c1_0 = vld1q_f32(&ptr_c_lines[1][j]);
-				float32x4_t c1_1 = vld1q_f32(&ptr_c_lines[1][j + 4]);
-				float32x4_t c2_0 = vld1q_f32(&ptr_c_lines[2][j]);
-				float32x4_t c2_1 = vld1q_f32(&ptr_c_lines[2][j + 4]);
-				float32x4_t c3_0 = vld1q_f32(&ptr_c_lines[3][j]);
-				float32x4_t c3_1 = vld1q_f32(&ptr_c_lines[3][j + 4]);
+				c0.val[0] = vmlaq_n_f32(c0.val[0], b1.val[0], t_a[0]);
+				c0.val[1] = vmlaq_n_f32(c0.val[1], b1.val[1], t_a[0]);
+				c1.val[0] = vmlaq_n_f32(c1.val[0], b1.val[0], t_a[1]);
+				c1.val[1] = vmlaq_n_f32(c1.val[1], b1.val[1], t_a[1]);
+				c2.val[0] = vmlaq_n_f32(c2.val[0], b1.val[0], t_a[2]);
+				c2.val[1] = vmlaq_n_f32(c2.val[1], b1.val[1], t_a[2]);
+				c3.val[0] = vmlaq_n_f32(c3.val[0], b1.val[0], t_a[3]);
+				c3.val[1] = vmlaq_n_f32(c3.val[1], b1.val[1], t_a[3]);
 
-				c0_0 = vmlaq_n_f32(c0_0, b1_0, t_a[0]);
-				c0_1 = vmlaq_n_f32(c0_1, b1_1, t_a[0]);
-				c1_0 = vmlaq_n_f32(c1_0, b1_0, t_a[1]);
-				c1_1 = vmlaq_n_f32(c1_1, b1_1, t_a[1]);
-				c2_0 = vmlaq_n_f32(c2_0, b1_0, t_a[2]);
-				c2_1 = vmlaq_n_f32(c2_1, b1_1, t_a[2]);
-				c3_0 = vmlaq_n_f32(c3_0, b1_0, t_a[3]);
-				c3_1 = vmlaq_n_f32(c3_1, b1_1, t_a[3]);
+				c0.val[0] = vmlaq_n_f32(c0.val[0], b2.val[0], t_a[4]);
+				c0.val[1] = vmlaq_n_f32(c0.val[1], b2.val[1], t_a[4]);
+				c1.val[0] = vmlaq_n_f32(c1.val[0], b2.val[0], t_a[5]);
+				c1.val[1] = vmlaq_n_f32(c1.val[1], b2.val[1], t_a[5]);
+				c2.val[0] = vmlaq_n_f32(c2.val[0], b2.val[0], t_a[6]);
+				c2.val[1] = vmlaq_n_f32(c2.val[1], b2.val[1], t_a[6]);
+				c3.val[0] = vmlaq_n_f32(c3.val[0], b2.val[0], t_a[7]);
+				c3.val[1] = vmlaq_n_f32(c3.val[1], b2.val[1], t_a[7]);
 
-				c0_0 = vmlaq_n_f32(c0_0, b2_0, t_a[4]);
-				c0_1 = vmlaq_n_f32(c0_1, b2_1, t_a[4]);
-				c1_0 = vmlaq_n_f32(c1_0, b2_0, t_a[5]);
-				c1_1 = vmlaq_n_f32(c1_1, b2_1, t_a[5]);
-				c2_0 = vmlaq_n_f32(c2_0, b2_0, t_a[6]);
-				c2_1 = vmlaq_n_f32(c2_1, b2_1, t_a[6]);
-				c3_0 = vmlaq_n_f32(c3_0, b2_0, t_a[7]);
-				c3_1 = vmlaq_n_f32(c3_1, b2_1, t_a[7]);
-
-				vst1q_f32(&ptr_c_lines[0][j], c0_0);
-				vst1q_f32(&ptr_c_lines[0][j + 4], c0_1);
-				vst1q_f32(&ptr_c_lines[1][j], c1_0);
-				vst1q_f32(&ptr_c_lines[1][j + 4], c1_1);
-				vst1q_f32(&ptr_c_lines[2][j], c2_0);
-				vst1q_f32(&ptr_c_lines[2][j + 4], c2_1);
-				vst1q_f32(&ptr_c_lines[3][j], c3_0);
-				vst1q_f32(&ptr_c_lines[3][j + 4], c3_1);
+				vst1q_f32(&ptr_c_lines[0][j],     c0.val[0]);
+				vst1q_f32(&ptr_c_lines[0][j + 4], c0.val[1]);
+				vst1q_f32(&ptr_c_lines[1][j],     c1.val[0]);
+				vst1q_f32(&ptr_c_lines[1][j + 4], c1.val[1]);
+				vst1q_f32(&ptr_c_lines[2][j],     c2.val[0]);
+				vst1q_f32(&ptr_c_lines[2][j + 4], c2.val[1]);
+				vst1q_f32(&ptr_c_lines[3][j],     c3.val[0]);
+				vst1q_f32(&ptr_c_lines[3][j + 4], c3.val[1]);
 
 			}
 #endif
@@ -724,35 +704,29 @@ static void fiv_small_matrix_t_mul_matrix_real32(
 			}
 #elif defined(FIV_USE_ARM_NEON)
 			for (; j <= cols_b - 8; j += 8){
-				float32x4_t b_0 = vld1q_f32(&ptr_b_line[j]);
-				float32x4_t b_1 = vld1q_f32(&ptr_b_line[j + 4]);
+				float32x4x2_t b  = { { vld1q_f32(&ptr_b_line[j]),     vld1q_f32(&ptr_b_line[j + 4]) } };
+				float32x4x2_t c0 = { { vld1q_f32(&ptr_c_lines[0][j]), vld1q_f32(&ptr_c_lines[0][j + 4]) } };
+				float32x4x2_t c1 = { { vld1q_f32(&ptr_c_lines[1][j]), vld1q_f32(&ptr_c_lines[1][j + 4]) } };
+				float32x4x2_t c2 = { { vld1q_f32(&ptr_c_lines[2][j]), vld1q_f32(&ptr_c_lines[2][j + 4]) } };
+				float32x4x2_t c3 = { { vld1q_f32(&ptr_c_lines[3][j]), vld1q_f32(&ptr_c_lines[3][j + 4]) } };
 
-				float32x4_t c0_0 = vld1q_f32(&ptr_c_lines[0][j]);
-				float32x4_t c0_1 = vld1q_f32(&ptr_c_lines[0][j + 4]);
-				float32x4_t c1_0 = vld1q_f32(&ptr_c_lines[1][j]);
-				float32x4_t c1_1 = vld1q_f32(&ptr_c_lines[1][j + 4]);
-				float32x4_t c2_0 = vld1q_f32(&ptr_c_lines[2][j]);
-				float32x4_t c2_1 = vld1q_f32(&ptr_c_lines[2][j + 4]);
-				float32x4_t c3_0 = vld1q_f32(&ptr_c_lines[3][j]);
-				float32x4_t c3_1 = vld1q_f32(&ptr_c_lines[3][j + 4]);
+				c0.val[0] = vmlaq_n_f32(c0.val[0], b.val[0], t_a1);
+				c0.val[1] = vmlaq_n_f32(c0.val[1], b.val[1], t_a1);
+				c1.val[0] = vmlaq_n_f32(c1.val[0], b.val[0], t_a2);
+				c1.val[1] = vmlaq_n_f32(c1.val[1], b.val[1], t_a2);
+				c2.val[0] = vmlaq_n_f32(c2.val[0], b.val[0], t_a3);
+				c2.val[1] = vmlaq_n_f32(c2.val[1], b.val[1], t_a3);
+				c3.val[0] = vmlaq_n_f32(c3.val[0], b.val[0], t_a4);
+				c3.val[1] = vmlaq_n_f32(c3.val[1], b.val[1], t_a4);
 
-				c0_0 = vmlaq_n_f32(c0_0, b_0, t_a1);
-				c0_1 = vmlaq_n_f32(c0_1, b_1, t_a1);
-				c1_0 = vmlaq_n_f32(c1_0, b_0, t_a2);
-				c1_1 = vmlaq_n_f32(c1_1, b_1, t_a2);
-				c2_0 = vmlaq_n_f32(c2_0, b_0, t_a3);
-				c2_1 = vmlaq_n_f32(c2_1, b_1, t_a3);
-				c3_0 = vmlaq_n_f32(c3_0, b_0, t_a4);
-				c3_1 = vmlaq_n_f32(c3_1, b_1, t_a4);
-
-				vst1q_f32(&ptr_c_lines[0][j], c0_0);
-				vst1q_f32(&ptr_c_lines[0][j + 4], c0_1);
-				vst1q_f32(&ptr_c_lines[1][j], c1_0);
-				vst1q_f32(&ptr_c_lines[1][j + 4], c1_1);
-				vst1q_f32(&ptr_c_lines[2][j], c2_0);
-				vst1q_f32(&ptr_c_lines[2][j + 4], c2_1);
-				vst1q_f32(&ptr_c_lines[3][j], c3_0);
-				vst1q_f32(&ptr_c_lines[3][j + 4], c3_1);
+				vst1q_f32(&ptr_c_lines[0][j],     c0.val[0]);
+				vst1q_f32(&ptr_c_lines[0][j + 4], c0.val[1]);
+				vst1q_f32(&ptr_c_lines[1][j],     c1.val[0]);
+				vst1q_f32(&ptr_c_lines[1][j + 4], c1.val[1]);
+				vst1q_f32(&ptr_c_lines[2][j],     c2.val[0]);
+				vst1q_f32(&ptr_c_lines[2][j + 4], c2.val[1]);
+				vst1q_f32(&ptr_c_lines[3][j],     c3.val[0]);
+				vst1q_f32(&ptr_c_lines[3][j + 4], c3.val[1]);
 
 			}
 #endif
@@ -860,42 +834,37 @@ static void fiv_small_matrix_t_mul_matrix_t_real32(
 			float32x4_t s0a = vdupq_n_f32(0), s0b = vdupq_n_f32(0);
 			float32x4_t s1a = vdupq_n_f32(0), s1b = vdupq_n_f32(0);
 			for (; k <= rows_a - 4; k += 4) {
-				float32x4_t a0  = vld1q_f32(&ptr_mem_a[8 * k]);
-				float32x4_t a0b = vld1q_f32(&ptr_mem_a[8 * k + 4]);
-				float32x4_t a1  = vld1q_f32(&ptr_mem_a[8 * (k + 1)]);
-				float32x4_t a1b = vld1q_f32(&ptr_mem_a[8 * (k + 1) + 4]);
-				float32x4_t a2  = vld1q_f32(&ptr_mem_a[8 * (k + 2)]);
-				float32x4_t a2b = vld1q_f32(&ptr_mem_a[8 * (k + 2) + 4]);
-				float32x4_t a3  = vld1q_f32(&ptr_mem_a[8 * (k + 3)]);
-				float32x4_t a3b = vld1q_f32(&ptr_mem_a[8 * (k + 3) + 4]);
+				float32x4x2_t a0 = { { vld1q_f32(&ptr_mem_a[8 * k]),       vld1q_f32(&ptr_mem_a[8 * k + 4]) } };
+				float32x4x2_t a1 = { { vld1q_f32(&ptr_mem_a[8 * (k + 1)]), vld1q_f32(&ptr_mem_a[8 * (k + 1) + 4]) } };
+				float32x4x2_t a2 = { { vld1q_f32(&ptr_mem_a[8 * (k + 2)]), vld1q_f32(&ptr_mem_a[8 * (k + 2) + 4]) } };
+				float32x4x2_t a3 = { { vld1q_f32(&ptr_mem_a[8 * (k + 3)]), vld1q_f32(&ptr_mem_a[8 * (k + 3) + 4]) } };
 
-				s0a = vmlaq_n_f32(s0a, a0, ptr_b[0][k]);
-				s0b = vmlaq_n_f32(s0b, a0b, ptr_b[0][k]);
-				s1a = vmlaq_n_f32(s1a, a0, ptr_b[1][k]);
-				s1b = vmlaq_n_f32(s1b, a0b, ptr_b[1][k]);
+				s0a = vmlaq_n_f32(s0a, a0.val[0], ptr_b[0][k]);
+				s0b = vmlaq_n_f32(s0b, a0.val[1], ptr_b[0][k]);
+				s1a = vmlaq_n_f32(s1a, a0.val[0], ptr_b[1][k]);
+				s1b = vmlaq_n_f32(s1b, a0.val[1], ptr_b[1][k]);
 
-				s0a = vmlaq_n_f32(s0a, a1, ptr_b[0][k + 1]);
-				s0b = vmlaq_n_f32(s0b, a1b, ptr_b[0][k + 1]);
-				s1a = vmlaq_n_f32(s1a, a1, ptr_b[1][k + 1]);
-				s1b = vmlaq_n_f32(s1b, a1b, ptr_b[1][k + 1]);
+				s0a = vmlaq_n_f32(s0a, a1.val[0], ptr_b[0][k + 1]);
+				s0b = vmlaq_n_f32(s0b, a1.val[1], ptr_b[0][k + 1]);
+				s1a = vmlaq_n_f32(s1a, a1.val[0], ptr_b[1][k + 1]);
+				s1b = vmlaq_n_f32(s1b, a1.val[1], ptr_b[1][k + 1]);
 
-				s0a = vmlaq_n_f32(s0a, a2, ptr_b[0][k + 2]);
-				s0b = vmlaq_n_f32(s0b, a2b, ptr_b[0][k + 2]);
-				s1a = vmlaq_n_f32(s1a, a2, ptr_b[1][k + 2]);
-				s1b = vmlaq_n_f32(s1b, a2b, ptr_b[1][k + 2]);
+				s0a = vmlaq_n_f32(s0a, a2.val[0], ptr_b[0][k + 2]);
+				s0b = vmlaq_n_f32(s0b, a2.val[1], ptr_b[0][k + 2]);
+				s1a = vmlaq_n_f32(s1a, a2.val[0], ptr_b[1][k + 2]);
+				s1b = vmlaq_n_f32(s1b, a2.val[1], ptr_b[1][k + 2]);
 
-				s0a = vmlaq_n_f32(s0a, a3, ptr_b[0][k + 3]);
-				s0b = vmlaq_n_f32(s0b, a3b, ptr_b[0][k + 3]);
-				s1a = vmlaq_n_f32(s1a, a3, ptr_b[1][k + 3]);
-				s1b = vmlaq_n_f32(s1b, a3b, ptr_b[1][k + 3]);
+				s0a = vmlaq_n_f32(s0a, a3.val[0], ptr_b[0][k + 3]);
+				s0b = vmlaq_n_f32(s0b, a3.val[1], ptr_b[0][k + 3]);
+				s1a = vmlaq_n_f32(s1a, a3.val[0], ptr_b[1][k + 3]);
+				s1b = vmlaq_n_f32(s1b, a3.val[1], ptr_b[1][k + 3]);
 			}
 			for (; k < rows_a; k++){
-				float32x4_t a0  = vld1q_f32(&ptr_mem_a[8 * k]);
-				float32x4_t a0b = vld1q_f32(&ptr_mem_a[8 * k + 4]);
-				s0a = vmlaq_n_f32(s0a, a0, ptr_b[0][k]);
-				s0b = vmlaq_n_f32(s0b, a0b, ptr_b[0][k]);
-				s1a = vmlaq_n_f32(s1a, a0, ptr_b[1][k]);
-				s1b = vmlaq_n_f32(s1b, a0b, ptr_b[1][k]);
+				float32x4x2_t a0 = { { vld1q_f32(&ptr_mem_a[8 * k]),       vld1q_f32(&ptr_mem_a[8 * k + 4]) } };
+				s0a = vmlaq_n_f32(s0a, a0.val[0], ptr_b[0][k]);
+				s0b = vmlaq_n_f32(s0b, a0.val[1], ptr_b[0][k]);
+				s1a = vmlaq_n_f32(s1a, a0.val[0], ptr_b[1][k]);
+				s1b = vmlaq_n_f32(s1b, a0.val[1], ptr_b[1][k]);
 			}
 			vst1q_f32(sum, s0a);
 			vst1q_f32(sum + 4, s0b);
@@ -996,29 +965,24 @@ static void fiv_small_matrix_t_mul_matrix_t_real32(
 #elif defined(FIV_USE_ARM_NEON)
 			float32x4_t s0a = vdupq_n_f32(0), s0b = vdupq_n_f32(0);
 			for (; k <= rows_a - 4; k += 4) {
-				float32x4_t a0  = vld1q_f32(&ptr_mem_a[8 * k]);
-				float32x4_t a0b = vld1q_f32(&ptr_mem_a[8 * k + 4]);
-				float32x4_t a1  = vld1q_f32(&ptr_mem_a[8 * (k + 1)]);
-				float32x4_t a1b = vld1q_f32(&ptr_mem_a[8 * (k + 1) + 4]);
-				float32x4_t a2  = vld1q_f32(&ptr_mem_a[8 * (k + 2)]);
-				float32x4_t a2b = vld1q_f32(&ptr_mem_a[8 * (k + 2) + 4]);
-				float32x4_t a3  = vld1q_f32(&ptr_mem_a[8 * (k + 3)]);
-				float32x4_t a3b = vld1q_f32(&ptr_mem_a[8 * (k + 3) + 4]);
+				float32x4x2_t a0 = { { vld1q_f32(&ptr_mem_a[8 * k]),       vld1q_f32(&ptr_mem_a[8 * k + 4]) } };
+				float32x4x2_t a1 = { { vld1q_f32(&ptr_mem_a[8 * (k + 1)]), vld1q_f32(&ptr_mem_a[8 * (k + 1) + 4]) } };
+				float32x4x2_t a2 = { { vld1q_f32(&ptr_mem_a[8 * (k + 2)]), vld1q_f32(&ptr_mem_a[8 * (k + 2) + 4]) } };
+				float32x4x2_t a3 = { { vld1q_f32(&ptr_mem_a[8 * (k + 3)]), vld1q_f32(&ptr_mem_a[8 * (k + 3) + 4]) } };
 
-				s0a = vmlaq_n_f32(s0a, a0, ptr_b[k]);
-				s0b = vmlaq_n_f32(s0b, a0b, ptr_b[k]);
-				s0a = vmlaq_n_f32(s0a, a1, ptr_b[k + 1]);
-				s0b = vmlaq_n_f32(s0b, a1b, ptr_b[k + 1]);
-				s0a = vmlaq_n_f32(s0a, a2, ptr_b[k + 2]);
-				s0b = vmlaq_n_f32(s0b, a2b, ptr_b[k + 2]);
-				s0a = vmlaq_n_f32(s0a, a3, ptr_b[k + 3]);
-				s0b = vmlaq_n_f32(s0b, a3b, ptr_b[k + 3]);
+				s0a = vmlaq_n_f32(s0a, a0.val[0], ptr_b[k]);
+				s0b = vmlaq_n_f32(s0b, a0.val[1], ptr_b[k]);
+				s0a = vmlaq_n_f32(s0a, a1.val[0], ptr_b[k + 1]);
+				s0b = vmlaq_n_f32(s0b, a1.val[1], ptr_b[k + 1]);
+				s0a = vmlaq_n_f32(s0a, a2.val[0], ptr_b[k + 2]);
+				s0b = vmlaq_n_f32(s0b, a2.val[1], ptr_b[k + 2]);
+				s0a = vmlaq_n_f32(s0a, a3.val[0], ptr_b[k + 3]);
+				s0b = vmlaq_n_f32(s0b, a3.val[1], ptr_b[k + 3]);
 			}
 			for (; k < rows_a; k++){
-				float32x4_t a0  = vld1q_f32(&ptr_mem_a[8 * k]);
-				float32x4_t a0b = vld1q_f32(&ptr_mem_a[8 * k + 4]);
-				s0a = vmlaq_n_f32(s0a, a0, ptr_b[k]);
-				s0b = vmlaq_n_f32(s0b, a0b, ptr_b[k]);
+				float32x4x2_t a0 = { { vld1q_f32(&ptr_mem_a[8 * k]),       vld1q_f32(&ptr_mem_a[8 * k + 4]) } };
+				s0a = vmlaq_n_f32(s0a, a0.val[0], ptr_b[k]);
+				s0b = vmlaq_n_f32(s0b, a0.val[1], ptr_b[k]);
 			}
 			vst1q_f32(sum, s0a);
 			vst1q_f32(sum + 4, s0b);
@@ -1092,14 +1056,22 @@ static void fiv_small_matrix_t_mul_matrix_t_real32(
 typedef void(*ptr_func_mat_mul_mxkxn_kernel)
 (int kc, ivf32 alpha, ivf32* a, ivf32* b, ivf32 beta, ivf32* c, int inc_row_c, int inc_col_c);
 
+/* Blocking is derived from the L3 cache size: the two packed panels
+   (A: FIV_M_BLOCK*K, B: FIV_N_BLOCK*K, 4 bytes each) together should fit
+   about half of L3. Default 8MB; override with -DFIV_L3_CACHE_BYTES=. */
+#ifndef FIV_L3_CACHE_BYTES
+#define FIV_L3_CACHE_BYTES (8 * 1024 * 1024)
+#endif
 #if _DEBUG
-#define fiv_M_BLOCK 32
-#define fiv_K_BLOCK 32
-#define fiv_N_BLOCK 32
+#define FIV_M_BLOCK 32
+#define FIV_K_BLOCK 32
+#define FIV_N_BLOCK 32
 #else
-#define fiv_M_BLOCK 512
-#define fiv_K_BLOCK 512
-#define fiv_N_BLOCK 480
+#define FIV_M_BLOCK 512
+#define FIV_N_BLOCK 480
+#define FIV_BLOCK_K_CALC() \
+    ((((FIV_L3_CACHE_BYTES / 2) / (4 * (FIV_M_BLOCK + FIV_N_BLOCK))) / 128) * 128)
+#define FIV_K_BLOCK (FIV_BLOCK_K_CALC() < 64 ? 64 : FIV_BLOCK_K_CALC())
 #endif
 
 static void copy_mrxk_blocked(
@@ -1177,14 +1149,14 @@ static void copy_b_blocked(int kc, int nc, int kernel_n, ivf32* b, int inc_row_b
 
 }
 
-#define fiv_KERNEL_M_8  (8)
-#define fiv_KERNEL_N_8  (8)
+#define FIV_KERNEL_M_8  (8)
+#define FIV_KERNEL_N_8  (8)
 
 static void mat_mul_8xkx8_kernel(
             int kc, ivf32 alpha, ivf32* a, ivf32* b, ivf32 beta,
             ivf32* c, int inc_row_c, int inc_col_c)
 {
-    ivf32 FIV_DALIGNED ab[fiv_KERNEL_M_8 * fiv_KERNEL_N_8];
+    ivf32 FIV_DALIGNED ab[FIV_KERNEL_M_8 * FIV_KERNEL_N_8];
     int i, j, l;
 #if defined(FIV_USE_AVX2)
     __m256 ab0, ab1, ab2, ab3;
@@ -1258,39 +1230,38 @@ static void mat_mul_8xkx8_kernel(
     float32x4_t ab7_0123 = vdupq_n_f32(0);
     float32x4_t ab7_4567 = vdupq_n_f32(0);
 
-    float32x4_t b0_0 = vld1q_f32(b);
-    float32x4_t b0_1 = vld1q_f32(b + 4);
+    float32x4x2_t b0 = { { vld1q_f32(b), vld1q_f32(b + 4) } };
 
     for (l = 0; l < kc; l++){
         b += 8;
-        ab0_0123 = vmlaq_n_f32(ab0_0123, b0_0, a[0]);
-        ab0_4567 = vmlaq_n_f32(ab0_4567, b0_1, a[0]);
+        ab0_0123 = vmlaq_n_f32(ab0_0123, b0.val[0], a[0]);
+        ab0_4567 = vmlaq_n_f32(ab0_4567, b0.val[1], a[0]);
 
-        ab1_0123 = vmlaq_n_f32(ab1_0123, b0_0, a[1]);
-        ab1_4567 = vmlaq_n_f32(ab1_4567, b0_1, a[1]);
+        ab1_0123 = vmlaq_n_f32(ab1_0123, b0.val[0], a[1]);
+        ab1_4567 = vmlaq_n_f32(ab1_4567, b0.val[1], a[1]);
 
-        ab2_0123 = vmlaq_n_f32(ab2_0123, b0_0, a[2]);
-        ab2_4567 = vmlaq_n_f32(ab2_4567, b0_1, a[2]);
+        ab2_0123 = vmlaq_n_f32(ab2_0123, b0.val[0], a[2]);
+        ab2_4567 = vmlaq_n_f32(ab2_4567, b0.val[1], a[2]);
 
-        ab3_0123 = vmlaq_n_f32(ab3_0123, b0_0, a[3]);
-        ab3_4567 = vmlaq_n_f32(ab3_4567, b0_1, a[3]);
+        ab3_0123 = vmlaq_n_f32(ab3_0123, b0.val[0], a[3]);
+        ab3_4567 = vmlaq_n_f32(ab3_4567, b0.val[1], a[3]);
 
-        ab4_0123 = vmlaq_n_f32(ab4_0123, b0_0, a[4]);
-        ab4_4567 = vmlaq_n_f32(ab4_4567, b0_1, a[4]);
+        ab4_0123 = vmlaq_n_f32(ab4_0123, b0.val[0], a[4]);
+        ab4_4567 = vmlaq_n_f32(ab4_4567, b0.val[1], a[4]);
 
-        ab5_0123 = vmlaq_n_f32(ab5_0123, b0_0, a[5]);
-        ab5_4567 = vmlaq_n_f32(ab5_4567, b0_1, a[5]);
+        ab5_0123 = vmlaq_n_f32(ab5_0123, b0.val[0], a[5]);
+        ab5_4567 = vmlaq_n_f32(ab5_4567, b0.val[1], a[5]);
 
-        ab6_0123 = vmlaq_n_f32(ab6_0123, b0_0, a[6]);
-        ab6_4567 = vmlaq_n_f32(ab6_4567, b0_1, a[6]);
+        ab6_0123 = vmlaq_n_f32(ab6_0123, b0.val[0], a[6]);
+        ab6_4567 = vmlaq_n_f32(ab6_4567, b0.val[1], a[6]);
 
-        ab7_0123 = vmlaq_n_f32(ab7_0123, b0_0, a[7]);
-        ab7_4567 = vmlaq_n_f32(ab7_4567, b0_1, a[7]);
+        ab7_0123 = vmlaq_n_f32(ab7_0123, b0.val[0], a[7]);
+        ab7_4567 = vmlaq_n_f32(ab7_4567, b0.val[1], a[7]);
 
         a += 8;
 
-        b0_0 = vld1q_f32(b);
-        b0_1 = vld1q_f32(b + 4);
+        b0.val[0] = vld1q_f32(b);
+        b0.val[1] = vld1q_f32(b + 4);
 
 
     }
@@ -1311,35 +1282,35 @@ static void mat_mul_8xkx8_kernel(
     vst1q_f32(ab + 56, ab7_0123);
     vst1q_f32(ab + 60, ab7_4567);
 #else
-    memset(ab, 0, sizeof(ivf32) * fiv_KERNEL_M_8 * fiv_KERNEL_N_8);
+    memset(ab, 0, sizeof(ivf32) * FIV_KERNEL_M_8 * FIV_KERNEL_N_8);
     for (l = 0; l < kc; l++){
-        for (j = 0; j < fiv_KERNEL_N_8; j++) {
-            for (i = 0; i < fiv_KERNEL_M_8; i++) {
-                ab[i * fiv_KERNEL_M_8 + j] += a[i] * b[j];
+        for (j = 0; j < FIV_KERNEL_N_8; j++) {
+            for (i = 0; i < FIV_KERNEL_M_8; i++) {
+                ab[i * FIV_KERNEL_M_8 + j] += a[i] * b[j];
             }
         }
-        a += fiv_KERNEL_M_8;
-        b += fiv_KERNEL_N_8;
+        a += FIV_KERNEL_M_8;
+        b += FIV_KERNEL_N_8;
     }
 
 #endif
     if (beta == 0.f){
         if (inc_row_c > inc_col_c) {
-            for (i = 0; i < fiv_KERNEL_M_8; i++) {
-                for (j = 0; j < fiv_KERNEL_N_8; j++) {
+            for (i = 0; i < FIV_KERNEL_M_8; i++) {
+                for (j = 0; j < FIV_KERNEL_N_8; j++) {
                     c[i * inc_row_c + j * inc_col_c] = 0;
                 }
             }
         }    else {
-            for (j = 0; j < fiv_KERNEL_N_8; j++) {
-                for (i = 0; i < fiv_KERNEL_M_8; i++) {
+            for (j = 0; j < FIV_KERNEL_N_8; j++) {
+                for (i = 0; i < FIV_KERNEL_M_8; i++) {
                     c[i * inc_row_c + j * inc_col_c] = 0;
                 }
             }
         }
     }    else if(beta != 1.f){
-        for (j = 0; j < fiv_KERNEL_N_8; j++) {
-            for (i = 0; i < fiv_KERNEL_M_8; i++) {
+        for (j = 0; j < FIV_KERNEL_N_8; j++) {
+            for (i = 0; i < FIV_KERNEL_M_8; i++) {
                 c[i * inc_row_c + j * inc_col_c] *= beta;
             }
         }
@@ -1347,15 +1318,15 @@ static void mat_mul_8xkx8_kernel(
     }
 
     if (alpha == 1.f){
-        for (j = 0; j < fiv_KERNEL_N_8; j++) {
-            for (i = 0; i < fiv_KERNEL_M_8; i++) {
-                c[j * inc_row_c + i * inc_col_c] += ab[i + j * fiv_KERNEL_M_8];
+        for (j = 0; j < FIV_KERNEL_N_8; j++) {
+            for (i = 0; i < FIV_KERNEL_M_8; i++) {
+                c[j * inc_row_c + i * inc_col_c] += ab[i + j * FIV_KERNEL_M_8];
             }
         }
     }  else {
-        for (j = 0; j < fiv_KERNEL_N_8; j++) {
-            for (i = 0; i < fiv_KERNEL_M_8; i++) {
-                c[j * inc_row_c + i * inc_col_c] += alpha * ab[i + j * fiv_KERNEL_M_8];
+        for (j = 0; j < FIV_KERNEL_N_8; j++) {
+            for (i = 0; i < FIV_KERNEL_M_8; i++) {
+                c[j * inc_row_c + i * inc_col_c] += alpha * ab[i + j * FIV_KERNEL_M_8];
             }
         }
     }
@@ -1363,16 +1334,16 @@ static void mat_mul_8xkx8_kernel(
 }
 
 
-#undef fiv_KERNEL_M_8
-#undef fiv_KERNEL_N_8
+#undef FIV_KERNEL_M_8
+#undef FIV_KERNEL_N_8
 
 /* 4x24 kernel: kept verbatim from the verified source, but never selected
    (the driver always uses the 8x8 kernel); compile only where its AVX2 body
    is valid to avoid a bogus uninitialized warning on non-AVX2 targets. */
 #if defined(FIV_USE_AVX2)
 
-#define fiv_KERNEL_M_4   (4)
-#define fiv_KERNEL_N_24  (24)
+#define FIV_KERNEL_M_4   (4)
+#define FIV_KERNEL_N_24  (24)
 
 static void mat_mul_4xkx24_kernel(
             int kc, ivf32 alpha,
@@ -1380,7 +1351,7 @@ static void mat_mul_4xkx24_kernel(
             ivf32 beta, ivf32*c,
             int inc_row_c, int inc_col_c)
 {
-    ivf32 FIV_DALIGNED ab[fiv_KERNEL_M_4 * fiv_KERNEL_N_24];
+    ivf32 FIV_DALIGNED ab[FIV_KERNEL_M_4 * FIV_KERNEL_N_24];
     int i, j, l;
     __m256 ab0, ab1, ab2, ab3;
     __m256 ab4, ab5, ab6, ab7;
@@ -1451,47 +1422,47 @@ static void mat_mul_4xkx24_kernel(
 
     if (beta == 0.f){
         if (inc_row_c > inc_col_c){
-            for (i = 0; i < fiv_KERNEL_M_4; i++) {
-                for (j = 0; j < fiv_KERNEL_N_24; j++) {
+            for (i = 0; i < FIV_KERNEL_M_4; i++) {
+                for (j = 0; j < FIV_KERNEL_N_24; j++) {
                     c[i * inc_row_c + j * inc_col_c] = 0.f;
                 }
             }
         }    else {
-            for (j = 0; j < fiv_KERNEL_N_24; j++) {
-                for (i = 0; i < fiv_KERNEL_M_4; i++) {
+            for (j = 0; j < FIV_KERNEL_N_24; j++) {
+                for (i = 0; i < FIV_KERNEL_M_4; i++) {
                     c[i * inc_row_c + j * inc_col_c] = 0.f;
                 }
             }
         }
     } else if (beta != 1.f){
-        for (j = 0; j < fiv_KERNEL_N_24; j++) {
-            for (i = 0; i < fiv_KERNEL_M_4; i++) {
+        for (j = 0; j < FIV_KERNEL_N_24; j++) {
+            for (i = 0; i < FIV_KERNEL_M_4; i++) {
                 c[i * inc_row_c + j * inc_col_c] *= beta;
             }
         }
     }
 
     if (alpha == 1.f){
-        for (i = 0; i < fiv_KERNEL_M_4; i++) {
-            for (j = 0; j < fiv_KERNEL_N_24; j++) {
-                c[i * inc_row_c + j * inc_col_c] += ab[j + i * fiv_KERNEL_N_24];
+        for (i = 0; i < FIV_KERNEL_M_4; i++) {
+            for (j = 0; j < FIV_KERNEL_N_24; j++) {
+                c[i * inc_row_c + j * inc_col_c] += ab[j + i * FIV_KERNEL_N_24];
             }
         }
     }   else {
-        for (i = 0; i < fiv_KERNEL_M_4; i++) {
-            for (j = 0; j < fiv_KERNEL_N_24; j++) {
-                c[i * inc_row_c + j * inc_col_c] += alpha * ab[j + i * fiv_KERNEL_N_24];
+        for (i = 0; i < FIV_KERNEL_M_4; i++) {
+            for (j = 0; j < FIV_KERNEL_N_24; j++) {
+                c[i * inc_row_c + j * inc_col_c] += alpha * ab[j + i * FIV_KERNEL_N_24];
             }
         }
     }
 }
 
-#undef fiv_KERNEL_M_4
-#undef fiv_KERNEL_N_24
+#undef FIV_KERNEL_M_4
+#undef FIV_KERNEL_N_24
 
 #endif  /* FIV_USE_AVX2 */
 
-#define MAX_KERNEL_SIZE 96   /* fits the 8x8 kernel (needs >= 64) */
+#define FIV_MAX_KERNEL_SIZE 96   /* fits the 8x8 kernel (needs >= 64) */
 
 static void dgeaxpy_row_major(
             int m, int n, ivf32 alpha,
@@ -1557,7 +1528,7 @@ static void mat_mul_kernel_row_major(
             if (mr == kernel_m_size && nr == kernel_n_size){
                 kernel(kc, alpha, ptr_a, ptr_b_j, beta, ptr_c_j, inc_row_c, inc_col_c);
             }    else {
-                ivf32 FIV_DALIGNED blocked_c[MAX_KERNEL_SIZE];
+                ivf32 FIV_DALIGNED blocked_c[FIV_MAX_KERNEL_SIZE];
                 kernel(kc, alpha, ptr_a, ptr_b_j, 0.f, blocked_c, 1, kernel_m_size);
                 dgescal_row_major(mr, nr, beta, ptr_c_j, inc_row_c, inc_col_c);
                 dgeaxpy_row_major(mr, nr, 1.f, blocked_c, 1, kernel_m_size, ptr_c_j, inc_row_c, inc_col_c);
@@ -1578,12 +1549,12 @@ static void blocked_mat_mul_row_major_real32(
             ivf32 beta,
             ivf32* c, int inc_row_c, int inc_col_c)
 {
-    int mb = (m + fiv_M_BLOCK - 1) / fiv_M_BLOCK;
-    int nb = (n + fiv_N_BLOCK - 1) / fiv_N_BLOCK;
-    int kb = (k + fiv_K_BLOCK - 1) / fiv_K_BLOCK;
-    int _mc = m % fiv_M_BLOCK;
-    int _nc = n % fiv_N_BLOCK;
-    int _kc = k % fiv_K_BLOCK;
+    int mb = (m + FIV_M_BLOCK - 1) / FIV_M_BLOCK;
+    int nb = (n + FIV_N_BLOCK - 1) / FIV_N_BLOCK;
+    int kb = (k + FIV_K_BLOCK - 1) / FIV_K_BLOCK;
+    int _mc = m % FIV_M_BLOCK;
+    int _nc = n % FIV_N_BLOCK;
+    int _kc = k % FIV_K_BLOCK;
 
     if (alpha == 0.f || k == 0) {
         dgescal_row_major(m, n, beta, c, inc_row_c, inc_col_c);
@@ -1611,26 +1582,26 @@ static void blocked_mat_mul_row_major_real32(
 
 
 
-    int a_zero_rest = fiv_M_BLOCK % kernel_m_size == 0 ? 0 : kernel_m_size - fiv_M_BLOCK % kernel_m_size;
-    int b_zero_rest = fiv_N_BLOCK % kernel_n_size == 0 ? 0 : kernel_n_size - fiv_N_BLOCK % kernel_n_size;
+    int a_zero_rest = FIV_M_BLOCK % kernel_m_size == 0 ? 0 : kernel_m_size - FIV_M_BLOCK % kernel_m_size;
+    int b_zero_rest = FIV_N_BLOCK % kernel_n_size == 0 ? 0 : kernel_n_size - FIV_N_BLOCK % kernel_n_size;
 
-    ivf32* blocked_a = (ivf32*)fiv_malloc(sizeof(ivf32) * (fiv_M_BLOCK + a_zero_rest) * fiv_K_BLOCK);
-    ivf32* blocked_b = (ivf32*)fiv_malloc(sizeof(ivf32) * (fiv_N_BLOCK + b_zero_rest) * fiv_K_BLOCK);
+    ivf32* blocked_a = (ivf32*)fiv_malloc(sizeof(ivf32) * (FIV_M_BLOCK + a_zero_rest) * FIV_K_BLOCK);
+    ivf32* blocked_b = (ivf32*)fiv_malloc(sizeof(ivf32) * (FIV_N_BLOCK + b_zero_rest) * FIV_K_BLOCK);
     if (blocked_a && blocked_b) {
         for (i = 0; i < mb; i++) {
-            ivf32* ptr_a = &a[i * fiv_M_BLOCK * inc_row_a];
-            ivf32* ptr_c = &c[i * fiv_M_BLOCK * inc_row_c];
-            mc = (i != mb - 1 || _mc == 0) ? fiv_M_BLOCK : _mc;
+            ivf32* ptr_a = &a[i * FIV_M_BLOCK * inc_row_a];
+            ivf32* ptr_c = &c[i * FIV_M_BLOCK * inc_row_c];
+            mc = (i != mb - 1 || _mc == 0) ? FIV_M_BLOCK : _mc;
             for (l = 0; l < kb; l++) {
-                ivf32* ptr_a_l = &ptr_a[l * fiv_K_BLOCK * inc_col_a];
-                ivf32* ptr_b   = &b[l * fiv_K_BLOCK * inc_row_b];
-                kc = (l != kb - 1 || _kc == 0) ? fiv_K_BLOCK : _kc;
+                ivf32* ptr_a_l = &ptr_a[l * FIV_K_BLOCK * inc_col_a];
+                ivf32* ptr_b   = &b[l * FIV_K_BLOCK * inc_row_b];
+                kc = (l != kb - 1 || _kc == 0) ? FIV_K_BLOCK : _kc;
                 ivf32 _beta = (l == 0) ? beta : 1.f;
                 copy_a_blocked(mc, kc, kernel_m_size, ptr_a_l, inc_row_a, inc_col_a, blocked_a);
                 for (j = 0; j < nb; j++) {
-                    ivf32* ptr_c_j = &ptr_c[j * fiv_N_BLOCK * inc_col_c];
-                    ivf32* ptr_b_j = &ptr_b[j * fiv_N_BLOCK * inc_col_b];
-                    nc = (j != nb - 1 || _nc == 0) ? fiv_N_BLOCK : _nc;
+                    ivf32* ptr_c_j = &ptr_c[j * FIV_N_BLOCK * inc_col_c];
+                    ivf32* ptr_b_j = &ptr_b[j * FIV_N_BLOCK * inc_col_b];
+                    nc = (j != nb - 1 || _nc == 0) ? FIV_N_BLOCK : _nc;
                     copy_b_blocked(kc, nc, kernel_n_size, ptr_b_j, inc_row_b, inc_col_b, blocked_b);
                     mat_mul_kernel_row_major(
                     mc, nc, kc, alpha, _beta,
@@ -1771,10 +1742,10 @@ fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
         fiv_matrix_mul_real32(a_transpose, b_transpose, M, N, K, alpha, a, ca, b, cb, beta, c, N);
     }
 
-    dst->shapes[0] = (size_t)M;
-    dst->shapes[1] = (size_t)N;
-    dst->strides[0] = (size_t)N * (size_t)dst->element_bytes;
-    dst->strides[1] = (size_t)dst->element_bytes;
+    dst->shapes[0]   = (size_t)M;
+    dst->shapes[1]   = (size_t)N;
+    dst->strides[0]  = (size_t)N * (size_t)dst->element_bytes;
+    dst->strides[1]  = (size_t)dst->element_bytes;
     dst->total_bytes = (size_t)M * (size_t)N * (size_t)dst->element_bytes;
     dst->data_continue = 1;
     return FIV_RET_OK;
