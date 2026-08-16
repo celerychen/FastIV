@@ -1,0 +1,123 @@
+/*
+ * FastIV - Fast image and vision
+ * Copyright (C) 2026 Celery Chen
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 3 as
+ * published by the Free Software Foundation.
+ *
+ * See LICENSE file in project root for full license text.
+ */
+
+#ifndef _FIV_NN_H_
+#define _FIV_NN_H_
+
+#include "fiv_data_typedefs.h"
+#include "fiv_matrix.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+typedef enum {
+    FIV_NN_NODE_INPUT = 0,
+    FIV_NN_NODE_LINEAR,
+    FIV_NN_NODE_RELU,
+    FIV_NN_NODE_TYPE_NUM
+} fiv_nn_node_type;
+
+
+typedef struct {
+    int in_features;   /* input feature count */
+    int out_features;  /* output feature count */
+} fiv_linear_node_params;
+
+/* Create an empty network context; returns NULL on allocation failure. */
+void* fiv_create_neural_network();
+
+/* Add a node to the network in order.
+   nn_context  - network context from fiv_create_neural_network
+   node_type   - FIV_NN_NODE_* (INPUT / LINEAR / RELU)
+   index_start - source node id feeding this node (0 = external input)
+   index_end   - this node's own id (must equal the current node count)
+   params      - op-specific params (e.g. fiv_linear_node_params); NULL for INPUT/RELU */
+fiv_ret fiv_neural_network_add_node(void* nn_context, int node_type, int index_start, int index_end, void* params);
+
+/* Run inference for one input and write the result into output.
+   output     - result tensor (must match the network output shape)
+   input      - input tensor fed to node 0
+   nn_context - network context (built or loaded from a model) */
+fiv_ret fiv_neural_network_inference(void* output, void* input, void* nn_context);
+
+/* Release a network context and free all internal state.
+   nn_context - address of the context pointer; set to NULL on return */
+fiv_ret fiv_release_neural_network(void** nn_context);
+
+/* Serialize the network (graph + weights/biases) to a file.
+   model_name - output file path
+   nn_context - network context */
+fiv_ret fiv_neural_network_save_model(char* model_name, void* nn_context);
+
+/* Load a network previously saved with fiv_neural_network_save_model.
+   model_name - input file path; returns NULL on error (missing / bad magic / bad type) */
+void* fiv_create_neural_network_from_model(char* model_name);
+
+typedef struct {
+   int epoch_num;          /* number of training epochs */
+   int bach_size;          /* samples per batch (caller spelling) */
+   ivf32 learning_rate;    /* SGD step size */
+   int loss_fn_type;       /* 0 = cross-entropy (classification), 1 = MSE (regression) */
+}fiv_nn_train_params;
+
+
+
+
+
+
+/* Descriptor the training framework passes to the data-loading callback and
+   which the callback fills. It carries both the run metadata (name / sizes /
+   current epoch) and the current batch's tensors: current_bach_inputs is fed to
+   network node 0 and current_batch_outputs is consumed by the loss. Both are
+   engine-generic tensors (any dim, 32F); the framework reads their shape by
+   fiv_data_id and never assumes a matrix layout or contiguity. */
+typedef struct {
+   char* data_set_name;   /* caller selects a named set; NULL => default */
+   size_t total_data_size;   /* total samples in the set (informational) */
+   int feature_size;      /* input feature count (informational) */
+   int label_size;        /* label size per sample (informational) */
+   int current_epoch_index;       /* current epoch (0-based); filled by the framework */
+   int current_batch_index;
+   void* current_batch_inputs;   /* this batch's input tensor */
+   void* current_batch_outputs; /* this batch's target / label tensor */
+}fiv_dadaset_info;
+
+
+
+
+
+
+/* User-supplied data loader: each call yields ONE batch. The callback fills
+   data_set_info->current_batch_inputs / current_batch_outputs in place and
+   returns FIV_RET_OK, or FIV_RET_ERR_END_OF_FILE when the current epoch is
+   exhausted (framework starts the next epoch), or FIV_RET_DATA_NOT_FOUND when
+   the named set is unavailable. */
+typedef fiv_ret (*fiv_load_dataset_fn)(fiv_dadaset_info* data_set_info);
+
+
+
+/* Train the network with SGD + backprop.
+   nn_context       - network context
+   nn_train_params  - epochs / batch size / learning rate / loss type
+   load_dataset     - callback that yields one batch per call */
+fiv_ret fiv_neural_network_train(void* nn_context, fiv_nn_train_params* nn_train_params, fiv_load_dataset_fn load_dataset);
+
+
+
+
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif  /* _FIV_NN_H_ */

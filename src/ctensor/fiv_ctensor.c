@@ -1100,6 +1100,51 @@ void* fiv_create_tensor_header_from_tensor(void* tensor)
 
 
 // ---------------------------------------------------------------------------
+// Alloc-like: same shape and dtype as src, but a fresh (uninitialized) data
+// buffer. Mirror fiv_create_tensor_header_from_tensor for the header, then
+// allocate the buffer via fiv_create_tensorN, so the result owns its buffer and
+// is contiguous regardless of whether src is. src must be a tensor (1D~5D).
+// ---------------------------------------------------------------------------
+
+void* fiv_create_tensor_like_tensor(void* tensor)
+{
+    fiv_data_id id;
+
+    if (tensor == NULL) return NULL;
+    id = *(fiv_data_id*)tensor;
+    if (id < FIV_ID_TENSOR1D || id > FIV_ID_TENSOR5D) return NULL;
+
+    switch (id) {
+    case FIV_ID_TENSOR1D: {
+        fiv_tensor1d* s = (fiv_tensor1d*)tensor;
+        return fiv_create_tensor1d(s->shapes[0], s->dtype);
+    }
+    case FIV_ID_TENSOR2D: {
+        fiv_tensor2d* s = (fiv_tensor2d*)tensor;
+        size_t sh[2] = { s->shapes[0], s->shapes[1] };
+        return fiv_create_tensor2d(sh, s->dtype);
+    }
+    case FIV_ID_TENSOR3D: {
+        fiv_tensor3d* s = (fiv_tensor3d*)tensor;
+        size_t sh[3] = { s->shapes[0], s->shapes[1], s->shapes[2] };
+        return fiv_create_tensor3d(sh, s->dtype);
+    }
+    case FIV_ID_TENSOR4D: {
+        fiv_tensor4d* s = (fiv_tensor4d*)tensor;
+        size_t sh[4] = { s->shapes[0], s->shapes[1], s->shapes[2], s->shapes[3] };
+        return fiv_create_tensor4d(sh, s->dtype);
+    }
+    case FIV_ID_TENSOR5D: {
+        fiv_tensor5d* s = (fiv_tensor5d*)tensor;
+        size_t sh[5] = { s->shapes[0], s->shapes[1], s->shapes[2], s->shapes[3], s->shapes[4] };
+        return fiv_create_tensor5d(sh, s->dtype);
+    }
+    default: return NULL;
+    }
+}
+
+
+// ---------------------------------------------------------------------------
 // Element-wise binary ops: c = a <op> b, per scalar component.
 // Only float32 (32F family) and signed int32 (32S family) dtypes are supported;
 // anything else returns FIV_RET_ERR_NOT_SUPPORT. a, b and c must share the same
