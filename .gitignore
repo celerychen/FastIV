@@ -13,6 +13,10 @@ obj/
 *.o
 *.log
 build/test_*
+*.bin
+
+# Datasets (large, kept on disk; fetched separately)
+data/
 
 # Agent / local tooling memory (not project source)
 .workbuddy/

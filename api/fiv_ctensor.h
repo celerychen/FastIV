@@ -143,6 +143,21 @@ typedef fiv_tensor2d fiv_mat;
 typedef fiv_tensor1d fiv_vec;
 
 
+/* ===================== Generic header (1D~5D shared prefix) ===================== */
+/* Every tensor dim shares this exact prefix (id, dtype, meta, data, total_bytes);
+   only the trailing shapes/strides arrays differ. Cast any tensor to this header to
+   read id/dtype/data_continue/data/total_bytes without committing to a concrete dim,
+   so element-wise ops stay dimension-agnostic (1D~5D). Do not read shapes/strides
+   through this view: its layout ends at total_bytes. */
+typedef struct {
+    fiv_data_id   id;
+    fiv_data_type dtype;
+    FIV_META_UNION;
+    FIV_DATA_UNION;
+    size_t total_bytes;
+} fiv_tensor_hdr;
+
+
 /* ===================== Create / release (1D~5D) ===================== */
 
 /* Create a tensor and allocate its data buffer; the returned tensor must be released by the caller */
@@ -222,6 +237,12 @@ void* fiv_create_tensor_from_tensor(void* tensor);
    description without copying or owning its data. Returns NULL if src is NULL or not a
    tensor. */
 void* fiv_create_tensor_header_from_tensor(void* tensor);
+
+/* Create a new tensor with the same shape and dtype as an existing tensor, but
+   allocate a fresh data buffer (no data is copied). The new tensor owns its buffer
+   (reference = 1) and is contiguous. Returns NULL if src is NULL, not a tensor, or
+   allocation fails. */
+void* fiv_create_tensor_like_tensor(void* tensor);
 
 
 /* ===================== Element-wise binary ops (float32 / int32) ===================== */
