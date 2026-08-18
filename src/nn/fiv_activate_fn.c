@@ -15,7 +15,7 @@
 #include "fiv_common.h"
 #include "fiv_ctensor.h"
 
-fiv_ret fiv_relu(void* input, void* output)
+fiv_ret fiv_relu(void* op_state, void* input, void* output)
 {
     if (!input || !output) return FIV_RET_ERR_PARA;
 
@@ -31,9 +31,17 @@ fiv_ret fiv_relu(void* input, void* output)
     ivf32* a = in->data.fl;
     ivf32* b = out->data.fl;
     size_t n = in->total_bytes / sizeof(ivf32);
+    int node_type = ((fiv_relu_node*)op_state)->node_type;
+    if(node_type == FIV_NN_NODE_RELU)
     for (size_t i = 0; i < n; i++) {
         ivf32 v = a[i];
-        b[i] = (v > 6.0f) ? 6.0f : ((v < 0.0f) ? 0.0f : v);
+        b[i] = v > 0.0f ? v : 0.0f;
+    } else{
+        for (size_t i = 0; i < n; i++) {
+            ivf32 v = a[i];
+            b[i] = (v > 6.0f) ? 6.0f : ((v < 0.0f) ? 0.0f : v);
+        }
+        
     }
     return FIV_RET_OK;
 }
@@ -55,6 +63,7 @@ void* fiv_relu_node_create(void* params)
 {
     fiv_relu_node* n = (fiv_relu_node*)fiv_malloc(sizeof(fiv_relu_node));
     if (!n) return NULL;
+    n->node_type       = params ? ((const fiv_relu_node_params*)params)->node_type : FIV_NN_NODE_RELU;
     n->base.create_fn    = fiv_relu_node_create;
     n->base.release_fn   = fiv_relu_node_release;
     n->base.forward_fn   = fiv_relu_node_forward;
@@ -72,12 +81,12 @@ void fiv_relu_node_release(void* op_state)
 
 fiv_ret fiv_relu_node_forward(void* op_state, void* output, void* input)
 {
-    return fiv_relu(input, output);
+    return fiv_relu(op_state, input, output);
 }
 
 fiv_ret fiv_relu_node_inference(void* op_state, void* output, void* input)
 {
-    return fiv_relu(input, output);
+    return fiv_relu(op_state, input, output);
 }
 
 fiv_ret fiv_relu_node_backward(void* op_state, void* grad_input, const void* grad_output, const void* input)
@@ -90,10 +99,15 @@ fiv_ret fiv_relu_node_backward(void* op_state, void* grad_input, const void* gra
     if (x->id < FIV_ID_TENSOR1D || x->id > FIV_ID_TENSOR5D) return FIV_RET_ERR_PARA;
     if (x->total_bytes != go->total_bytes || x->total_bytes != gi->total_bytes) return FIV_RET_ERR_PARA;
 
+    int relu6 = (((fiv_relu_node*)op_state)->node_type == FIV_NN_NODE_RELU6);
     const ivf32* a = x->data.fl;
     const ivf32* g = go->data.fl;
     ivf32* h = gi->data.fl;
     size_t n = x->total_bytes / sizeof(ivf32);
-    for (size_t i = 0; i < n; i++) h[i] += (a[i] > 0.0f && a[i] < 6.0f) ? g[i] : 0.0f;
+    for (size_t i = 0; i < n; i++) {
+        ivf32 m = (a[i] > 0.0f) ? 1.0f : 0.0f;
+        if (relu6) m = (a[i] > 0.0f && a[i] < 6.0f) ? 1.0f : 0.0f;
+        h[i] += m * g[i];
+    }
     return FIV_RET_OK;
 }
