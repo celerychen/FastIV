@@ -10,6 +10,7 @@
  */
 
 #include <string.h>
+#include <stdint.h>
 #include "fiv_activate_fn.h"
 #include "fiv_nn_infer.h"
 #include "fiv_common.h"
@@ -63,7 +64,7 @@ void* fiv_relu_node_create(void* params)
 {
     fiv_relu_node* n = (fiv_relu_node*)fiv_malloc(sizeof(fiv_relu_node));
     if (!n) return NULL;
-    n->node_type       = params ? ((const fiv_relu_node_params*)params)->node_type : FIV_NN_NODE_RELU;
+    n->node_type       = (int)(intptr_t)params;
     n->base.create_fn    = fiv_relu_node_create;
     n->base.release_fn   = fiv_relu_node_release;
     n->base.forward_fn   = fiv_relu_node_forward;
@@ -104,10 +105,16 @@ fiv_ret fiv_relu_node_backward(void* op_state, void* grad_input, const void* gra
     const ivf32* g = go->data.fl;
     ivf32* h = gi->data.fl;
     size_t n = x->total_bytes / sizeof(ivf32);
-    for (size_t i = 0; i < n; i++) {
-        ivf32 m = (a[i] > 0.0f) ? 1.0f : 0.0f;
-        if (relu6) m = (a[i] > 0.0f && a[i] < 6.0f) ? 1.0f : 0.0f;
-        h[i] += m * g[i];
+    if (relu6) {
+        for (size_t i = 0; i < n; i++) {
+            ivf32 m = (a[i] > 0.0f && a[i] < 6.0f) ? 1.0f : 0.0f;
+            h[i] += m * g[i];
+        }
+    } else {
+        for (size_t i = 0; i < n; i++) {
+            ivf32 m = (a[i] > 0.0f) ? 1.0f : 0.0f;
+            h[i] += m * g[i];
+        }
     }
     return FIV_RET_OK;
 }
