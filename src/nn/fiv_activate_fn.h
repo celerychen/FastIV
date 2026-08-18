@@ -18,13 +18,26 @@
 extern "C" {
 #endif
 
-/* ReLU primitive: out[i] = max(0, in[i]). in/out must be contiguous float32
-   tensors with the same total element count; out may alias in (in-place). */
-fiv_ret fiv_relu(void* input, void* output);
+/* ReLU / ReLU6 elementwise op. For RELU: out[i] = max(0, in[i]); for RELU6:
+   out[i] = clamp(in[i], 0, 6). The branch is selected by op_state->node_type.
+   in/out must be contiguous float32 tensors with equal element count; out
+   may alias in (in-place). */
+fiv_ret fiv_relu(void* op_state, void* input, void* output);
 
-/* ReLU op. Stateless: forward equals inference, backward masks with x > 0. */
+/* Parameters for fiv_relu_node_create. The caller passes the node-type id so
+   the op is created for the requested variant (RELU or ReLU6). */
+typedef struct {
+    int node_type;   /* FIV_NN_NODE_RELU or FIV_NN_NODE_RELU6 */
+} fiv_relu_node_params;
+
+/* ReLU / ReLU6 op. ReLU and ReLU6 share the same create/release; the active
+   node-type id is stored here (set from params at create time) and consulted
+   only at compute time.
+   fiv_nn_op_base must be the first member (see fiv_nn_op.h) so the engine can
+   upcast op_state to fiv_nn_op_base* for dispatch. */
 typedef struct {
     fiv_nn_op_base base;
+    int node_type;
 } fiv_relu_node;
 
 void*   fiv_relu_node_create(void* params);

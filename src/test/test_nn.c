@@ -79,6 +79,29 @@ static int write_model_linear_relu(const char* path)
     return 1;
 }
 
+static int write_model_linear_relu6(const char* path)
+{
+    FILE* fp = fopen(path, "wb");
+    if (!fp) return 0;
+    put_i32(fp, (int)MODEL_MAGIC);
+    put_i32(fp, 1);
+    put_i32(fp, 3);                    /* node 0 + nodes 1,2 */
+    put_i32(fp, FIV_NN_NODE_LINEAR);   /* node 1: LINEAR, src 0, 3 -> 2 */
+    put_i32(fp, 0);
+    put_i32(fp, 3);
+    put_i32(fp, 2);
+    float W[6] = { 1, 2, 3, 4, 5, 6 };
+    float B[2] = { 0.5f, -1.0f };
+    fwrite(W, 4, 6, fp);
+    fwrite(B, 4, 2, fp);
+    put_i32(fp, FIV_NN_NODE_RELU6);    /* node 2: RELU6, src 1 */
+    put_i32(fp, 1);
+    put_i32(fp, -1);
+    put_i32(fp, -1);
+    fclose(fp);
+    return 1;
+}
+
 static int write_model_bad_magic(const char* path)
 {
     FILE* fp = fopen(path, "wb");
@@ -215,7 +238,17 @@ int main(void)
     CHECK(rnet != NULL, "from_model loads LINEAR+RELU model");
     CHECK(fiv_neural_network_inference(out, in, rnet) == FIV_RET_OK, "LINEAR+RELU model inference");
     CHECK(NEAR(out->data.fl[0], 0.0f) && NEAR(out->data.fl[1], 0.0f)
+       && NEAR(out->data.fl[2], 4.5f) && NEAR(out->data.fl[3], 12.0f), "relu in network (clamps neg, no cap)");
+
+    /* ---- model with RELU6: same weights, but caps at 6 (distinct from RELU) ---- */
+    CHECK(write_model_linear_relu6("fiv_nn_m_relu6.bin"), "write LINEAR+RELU6 model file");
+    void* r6net = fiv_create_neural_network_from_model("fiv_nn_m_relu6.bin");
+    CHECK(r6net != NULL, "from_model loads LINEAR+RELU6 model");
+    CHECK(fiv_neural_network_inference(out, in, r6net) == FIV_RET_OK, "LINEAR+RELU6 model inference");
+    CHECK(NEAR(out->data.fl[0], 0.0f) && NEAR(out->data.fl[1], 0.0f)
        && NEAR(out->data.fl[2], 4.5f) && NEAR(out->data.fl[3], 6.0f), "relu6 in network (clamps neg, caps at 6)");
+    void* r6p = r6net;
+    fiv_release_neural_network(&r6p);
 
     /* ---- bad files -> NULL ---- */
     CHECK(fiv_create_neural_network_from_model("fiv_nn_no_such_file.bin") == NULL, "missing file -> NULL");
@@ -354,7 +387,26 @@ int main(void)
     void* rp = rnet;
     fiv_release_neural_network(&rp);
 
-    /* ---- ReLU is dimension-agnostic: 3D and 4D tensors (public API) ---- */
+    /* ---- ReLU6 / ReLU are dimension-agnostic: 3D and 4D tensors (public API) ---- */
+    {
+        size_t s3[3] = { 2, 2, 3 };
+        float raw3[12] = { 1,-2, 3, 0, -4, 5, -6, 7, 8, -9, 0, 2 };
+        void* rn3 = fiv_create_neural_network();
+        CHECK(fiv_neural_network_add_node(rn3, FIV_NN_NODE_RELU6, 0, 1, NULL) == FIV_RET_OK, "relu6 3D graph add");
+        fiv_tensor3d* in3 = fiv_create_tensor3d(s3, FIV_32F1);
+        memcpy(in3->data.fl, raw3, sizeof(raw3));
+        fiv_tensor3d* out3 = fiv_create_tensor3d(s3, FIV_32F1);
+        CHECK(fiv_neural_network_inference(out3, in3, rn3) == FIV_RET_OK, "relu6 3D graph inference");
+        int ok3g = 1;
+        for (int i = 0; i < 12; i++) {
+            float e = (raw3[i] > 6.0f) ? 6.0f : ((raw3[i] < 0.0f) ? 0.0f : raw3[i]);
+            if (out3->data.fl[i] != e) ok3g = 0;
+        }
+        CHECK(ok3g, "relu6 3D graph: clamp [0,6] correct");
+        void* r3p = rn3; fiv_release_neural_network(&r3p);
+        fiv_release_tensor((void**)&in3);
+        fiv_release_tensor((void**)&out3);
+    }
     {
         size_t s3[3] = { 2, 2, 3 };
         float raw3[12] = { 1,-2, 3, 0, -4, 5, -6, 7, 8, -9, 0, 2 };
@@ -366,13 +418,32 @@ int main(void)
         CHECK(fiv_neural_network_inference(out3, in3, rn3) == FIV_RET_OK, "relu 3D graph inference");
         int ok3g = 1;
         for (int i = 0; i < 12; i++) {
-            float e = (raw3[i] > 6.0f) ? 6.0f : ((raw3[i] < 0.0f) ? 0.0f : raw3[i]);
+            float e = (raw3[i] > 0.0f) ? raw3[i] : 0.0f;
             if (out3->data.fl[i] != e) ok3g = 0;
         }
-        CHECK(ok3g, "relu6 3D graph: clamp [0,6] correct");
+        CHECK(ok3g, "relu 3D graph: max(0,x) correct (no cap)");
         void* r3p = rn3; fiv_release_neural_network(&r3p);
         fiv_release_tensor((void**)&in3);
         fiv_release_tensor((void**)&out3);
+    }
+    {
+        size_t s4[4] = { 1, 2, 2, 3 };
+        float raw4[12] = { 1,-2, 3, 0, -4, 5, -6, 7, 8, -9, 0, 2 };
+        void* rn4 = fiv_create_neural_network();
+        CHECK(fiv_neural_network_add_node(rn4, FIV_NN_NODE_RELU6, 0, 1, NULL) == FIV_RET_OK, "relu6 4D graph add");
+        fiv_tensor4d* in4 = fiv_create_tensor4d(s4, FIV_32F1);
+        memcpy(in4->data.fl, raw4, sizeof(raw4));
+        fiv_tensor4d* out4 = fiv_create_tensor4d(s4, FIV_32F1);
+        CHECK(fiv_neural_network_inference(out4, in4, rn4) == FIV_RET_OK, "relu6 4D graph inference");
+        int ok4g = 1;
+        for (int i = 0; i < 12; i++) {
+            float e = (raw4[i] > 6.0f) ? 6.0f : ((raw4[i] < 0.0f) ? 0.0f : raw4[i]);
+            if (out4->data.fl[i] != e) ok4g = 0;
+        }
+        CHECK(ok4g, "relu6 4D graph: clamp [0,6] correct");
+        void* r4p = rn4; fiv_release_neural_network(&r4p);
+        fiv_release_tensor((void**)&in4);
+        fiv_release_tensor((void**)&out4);
     }
     {
         size_t s4[4] = { 1, 2, 2, 3 };
@@ -385,10 +456,10 @@ int main(void)
         CHECK(fiv_neural_network_inference(out4, in4, rn4) == FIV_RET_OK, "relu 4D graph inference");
         int ok4g = 1;
         for (int i = 0; i < 12; i++) {
-            float e = (raw4[i] > 6.0f) ? 6.0f : ((raw4[i] < 0.0f) ? 0.0f : raw4[i]);
+            float e = (raw4[i] > 0.0f) ? raw4[i] : 0.0f;
             if (out4->data.fl[i] != e) ok4g = 0;
         }
-        CHECK(ok4g, "relu6 4D graph: clamp [0,6] correct");
+        CHECK(ok4g, "relu 4D graph: max(0,x) correct (no cap)");
         void* r4p = rn4; fiv_release_neural_network(&r4p);
         fiv_release_tensor((void**)&in4);
         fiv_release_tensor((void**)&out4);
@@ -397,6 +468,7 @@ int main(void)
     remove("fiv_nn_m_linear.bin");
     remove("fiv_nn_m_saved.bin");
     remove("fiv_nn_m_relu.bin");
+    remove("fiv_nn_m_relu6.bin");
     remove("fiv_nn_m_badmagic.bin");
     remove("fiv_nn_m_badtype.bin");
 

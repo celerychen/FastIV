@@ -49,7 +49,11 @@ static void* fiv_nn_make_op(int node_type, void* params)
 {
     switch (node_type) {
     case FIV_NN_NODE_LINEAR: return fiv_linear_node_create(params);
-    case FIV_NN_NODE_RELU:   return fiv_relu_node_create(params);
+    case FIV_NN_NODE_RELU:
+    case FIV_NN_NODE_RELU6: {
+        fiv_relu_node_params p = { node_type };
+        return fiv_relu_node_create(&p);
+    }
     default:                 return NULL;
     }
 }
@@ -389,8 +393,8 @@ void* fiv_create_neural_network_from_model(char* model_name)
                 fread(ln->bias->data.fl,   sizeof(float), nb, fp) != nb) {
                 goto fail;
             }
-        } else if (type == FIV_NN_NODE_RELU) {
-            if (fiv_neural_network_add_node(net, FIV_NN_NODE_RELU, (int)src, i, NULL) != FIV_RET_OK) {
+        } else if (type == FIV_NN_NODE_RELU || type == FIV_NN_NODE_RELU6) {
+            if (fiv_neural_network_add_node(net, (int)type, (int)src, i, NULL) != FIV_RET_OK) {
                 goto fail;
             }
         } else {

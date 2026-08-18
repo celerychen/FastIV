@@ -24,6 +24,7 @@ typedef enum {
     FIV_NN_NODE_INPUT = 0,
     FIV_NN_NODE_LINEAR,
     FIV_NN_NODE_RELU,
+    FIV_NN_NODE_RELU6,
     FIV_NN_NODE_TYPE_NUM
 } fiv_nn_node_type;
 
@@ -38,7 +39,7 @@ void* fiv_create_neural_network();
 
 /* Add a node to the network in order.
    nn_context  - network context from fiv_create_neural_network
-   node_type   - FIV_NN_NODE_* (INPUT / LINEAR / RELU)
+   node_type   - FIV_NN_NODE_* (INPUT / LINEAR / RELU / RELU6)
    index_start - source node id feeding this node (0 = external input)
    index_end   - this node's own id (must equal the current node count)
    params      - op-specific params (e.g. fiv_linear_node_params); NULL for INPUT/RELU */
