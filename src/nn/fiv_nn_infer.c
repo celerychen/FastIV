@@ -50,10 +50,8 @@ static void* fiv_nn_make_op(int node_type, void* params)
     switch (node_type) {
     case FIV_NN_NODE_LINEAR: return fiv_linear_node_create(params);
     case FIV_NN_NODE_RELU:
-    case FIV_NN_NODE_RELU6: {
-        fiv_relu_node_params p = { node_type };
-        return fiv_relu_node_create(&p);
-    }
+    case FIV_NN_NODE_RELU6:
+        return fiv_relu_node_create((void*)(intptr_t)node_type);
     default:                 return NULL;
     }
 }

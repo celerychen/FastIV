@@ -24,15 +24,9 @@ extern "C" {
    may alias in (in-place). */
 fiv_ret fiv_relu(void* op_state, void* input, void* output);
 
-/* Parameters for fiv_relu_node_create. The caller passes the node-type id so
-   the op is created for the requested variant (RELU or ReLU6). */
-typedef struct {
-    int node_type;   /* FIV_NN_NODE_RELU or FIV_NN_NODE_RELU6 */
-} fiv_relu_node_params;
-
 /* ReLU / ReLU6 op. ReLU and ReLU6 share the same create/release; the active
-   node-type id is stored here (set from params at create time) and consulted
-   only at compute time.
+   node-type id is stored here (set by the caller at create time from the
+   requested variant) and consulted only at compute time.
    fiv_nn_op_base must be the first member (see fiv_nn_op.h) so the engine can
    upcast op_state to fiv_nn_op_base* for dispatch. */
 typedef struct {
