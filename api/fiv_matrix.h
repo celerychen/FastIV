@@ -64,6 +64,19 @@ fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
    (in-place). */
 fiv_ret fiv_matrix_add_vec(fiv_mat* dst, const fiv_mat* src, const fiv_vec* vec, int dim);
 
+/* Reduce a matrix to a vector by summing along one axis (float32 only).
+   dim == 0 (row direction): sum over rows; dst is a vector of length src->cols
+     and dst[j] = sum_i src[i, j].
+   dim == 1 (column direction): sum over columns; dst is a vector of length
+     src->rows and dst[i] = sum_j src[i, j].
+   dim == -1: sum every element into a single scalar held as a vector of length
+     1 at dst[0].
+   dst must be a contiguous float32 1D tensor whose length matches the axis being
+   reduced (length 1 for dim == -1); a length mismatch or dim not in {-1,0,1}
+   returns FIV_RET_ERR_PARA. src must be a contiguous float32 matrix; other
+   dtypes return FIV_RET_ERR_NOT_SUPPORT. dst is overwritten. */
+fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim);
+
 
 #ifdef __cplusplus
 }
