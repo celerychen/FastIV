@@ -40,8 +40,8 @@ test_ctensor:       $(OBJDIR)/test_ctensor.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/f
 test_mat_transpose: $(OBJDIR)/test_mat_transpose.o $(OBJDIR)/fiv_mat_transpose.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 test_mat_vec:       $(OBJDIR)/test_mat_vec.o $(OBJDIR)/fiv_mat_vec.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 test_mat_mul:       $(OBJDIR)/test_mat_mul.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
-test_nn:            $(OBJDIR)/test_nn.o $(OBJDIR)/fiv_nn_infer.o $(OBJDIR)/fiv_nn_topo.o $(OBJDIR)/fiv_nn_train.o $(OBJDIR)/fiv_linear_node.o $(OBJDIR)/fiv_activate_fn.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
-test_nn_mnist:      $(OBJDIR)/test_nn_mnist.o $(OBJDIR)/fiv_nn_infer.o $(OBJDIR)/fiv_nn_topo.o $(OBJDIR)/fiv_nn_train.o $(OBJDIR)/fiv_linear_node.o $(OBJDIR)/fiv_activate_fn.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
+test_nn:            $(OBJDIR)/test_nn.o $(OBJDIR)/fiv_nn_infer.o $(OBJDIR)/fiv_nn_topo.o $(OBJDIR)/fiv_nn_train.o $(OBJDIR)/fiv_linear_node.o $(OBJDIR)/fiv_activate_fn.o $(OBJDIR)/fiv_mat_vec.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
+test_nn_mnist:      $(OBJDIR)/test_nn_mnist.o $(OBJDIR)/fiv_nn_infer.o $(OBJDIR)/fiv_nn_topo.o $(OBJDIR)/fiv_nn_train.o $(OBJDIR)/fiv_linear_node.o $(OBJDIR)/fiv_activate_fn.o $(OBJDIR)/fiv_mat_vec.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 
 .PHONY: all run clean
 all: $(TESTS) $(OBJDIR)/fiv_nn_infer.o $(OBJDIR)/fiv_nn_topo.o $(OBJDIR)/fiv_nn_train.o $(OBJDIR)/fiv_linear_node.o $(OBJDIR)/fiv_activate_fn.o

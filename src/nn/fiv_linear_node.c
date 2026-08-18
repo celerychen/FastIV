@@ -37,13 +37,8 @@ static fiv_ret fiv_linear_compute(fiv_linear_node* n, fiv_mat* out, const fiv_ma
 
     if (n->bias) {
         if (n->bias->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
-        const ivf32* b = n->bias->data.fl;
-        ivf32* o = out->data.fl;
-        size_t rows = out->rows;
-        size_t cols = out->cols;
-        for (size_t i = 0; i < rows; i++)
-            for (size_t j = 0; j < cols; j++)
-                o[i * cols + j] += b[j];
+        fiv_ret r2 = fiv_matrix_add_vec(out, out, n->bias, 0);
+        if (r2 != FIV_RET_OK) return r2;
     }
     return FIV_RET_OK;
 }

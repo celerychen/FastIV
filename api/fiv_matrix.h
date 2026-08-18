@@ -53,6 +53,17 @@ fiv_ret fiv_matrix_mul_vec(fiv_vec* dst, const fiv_mat* mat, const fiv_vec* vec,
 fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
                        int a_transpose, int b_transpose, ivf32 alpha, ivf32 beta);
 
+/* Add a vector to a matrix with broadcasting along one axis.
+   dim == 0 (row direction): the vector is added to every row; vec->length must
+     equal src->cols and out[i, j] = src[i, j] + vec[j].
+   dim == 1 (column direction): the vector is added to every column; vec->length
+     must equal src->rows and out[i, j] = src[i, j] + vec[i].
+   A length mismatch with the addressed row/column returns FIV_RET_ERR_PARA, as
+   does dim != 0 && dim != 1. All tensors must be contiguous float32 holding
+   data; other dtypes return FIV_RET_ERR_NOT_SUPPORT. dst may alias src
+   (in-place). */
+fiv_ret fiv_matrix_add_vec(fiv_mat* dst, const fiv_mat* src, const fiv_vec* vec, int dim);
+
 
 #ifdef __cplusplus
 }
