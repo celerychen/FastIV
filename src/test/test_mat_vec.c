@@ -116,6 +116,101 @@ static void test_error_paths(void)
     fiv_release_tensor1d(&dst);
 }
 
+static void test_matrix_add_vec(void)
+{
+    /* dim == 0: vector added to each row (broadcast along rows).
+       src = [[1,2,3],[4,5,6]], vec = [10,20,30] (length 3 == cols). */
+    {
+        size_t sh[2] = { 2, 3 };
+        fiv_mat* src = fiv_create_tensor2d(sh, FIV_32F1);
+        fiv_mat* dst = fiv_create_tensor2d(sh, FIV_32F1);
+        fiv_vec* vec = fiv_create_tensor1d(3, FIV_32F1);
+        CHECK(src != NULL && dst != NULL && vec != NULL, "alloc ok");
+        float m[6] = { 1, 2, 3, 4, 5, 6 };
+        float v[3] = { 10, 20, 30 };
+        memcpy(src->data.fl, m, sizeof(m));
+        memcpy(vec->data.fl, v, sizeof(v));
+        CHECK(fiv_matrix_add_vec(dst, src, vec, 0) == FIV_RET_OK, "add_vec dim0 OK");
+        float exp[6] = { 11, 22, 33, 14, 25, 36 };
+        int bad = 0;
+        for (int k = 0; k < 6; k++) if (fabsf_local(dst->data.fl[k] - exp[k]) > 1e-6f) bad++;
+        CHECK(bad == 0, "dim0: vec added per row");
+        fiv_release_tensor2d(&src);
+        fiv_release_tensor2d(&dst);
+        fiv_release_tensor1d(&vec);
+    }
+
+    /* dim == 1: vector added to each column (broadcast along columns).
+       vec = [100,200] (length 2 == rows): clearly distinct from dim0 above. */
+    {
+        size_t sh[2] = { 2, 3 };
+        fiv_mat* src = fiv_create_tensor2d(sh, FIV_32F1);
+        fiv_mat* dst = fiv_create_tensor2d(sh, FIV_32F1);
+        fiv_vec* vec = fiv_create_tensor1d(2, FIV_32F1);
+        CHECK(src != NULL && dst != NULL && vec != NULL, "alloc ok");
+        float m[6] = { 1, 2, 3, 4, 5, 6 };
+        float v[2] = { 100, 200 };
+        memcpy(src->data.fl, m, sizeof(m));
+        memcpy(vec->data.fl, v, sizeof(v));
+        CHECK(fiv_matrix_add_vec(dst, src, vec, 1) == FIV_RET_OK, "add_vec dim1 OK");
+        float exp[6] = { 101, 102, 103, 204, 205, 206 };
+        int bad = 0;
+        for (int k = 0; k < 6; k++) if (fabsf_local(dst->data.fl[k] - exp[k]) > 1e-6f) bad++;
+        CHECK(bad == 0, "dim1: vec added per column");
+        fiv_release_tensor2d(&src);
+        fiv_release_tensor2d(&dst);
+        fiv_release_tensor1d(&vec);
+    }
+
+    /* in-place: dst aliases src */
+    {
+        size_t sh[2] = { 2, 3 };
+        fiv_mat* m = fiv_create_tensor2d(sh, FIV_32F1);
+        fiv_vec* vec = fiv_create_tensor1d(3, FIV_32F1);
+        CHECK(m != NULL && vec != NULL, "alloc ok");
+        float a[6] = { 1, 2, 3, 4, 5, 6 };
+        float v[3] = { 10, 20, 30 };
+        memcpy(m->data.fl, a, sizeof(a));
+        memcpy(vec->data.fl, v, sizeof(v));
+        CHECK(fiv_matrix_add_vec(m, m, vec, 0) == FIV_RET_OK, "add_vec in-place OK");
+        float exp[6] = { 11, 22, 33, 14, 25, 36 };
+        int bad = 0;
+        for (int k = 0; k < 6; k++) if (fabsf_local(m->data.fl[k] - exp[k]) > 1e-6f) bad++;
+        CHECK(bad == 0, "in-place result correct");
+        fiv_release_tensor2d(&m);
+        fiv_release_tensor1d(&vec);
+    }
+
+    /* error paths: null args, length mismatch, bad dim */
+    {
+        size_t sh[2] = { 2, 3 };
+        fiv_mat* src = fiv_create_tensor2d(sh, FIV_32F1);
+        fiv_mat* dst = fiv_create_tensor2d(sh, FIV_32F1);
+        fiv_vec* v3 = fiv_create_tensor1d(3, FIV_32F1);   /* length 3: OK for dim0, wrong for dim1 */
+        fiv_vec* v2 = fiv_create_tensor1d(2, FIV_32F1);   /* length 2: OK for dim1, wrong for dim0 */
+        CHECK(src != NULL && dst != NULL && v3 != NULL && v2 != NULL, "alloc ok");
+
+        CHECK(fiv_matrix_add_vec(NULL, src, v3, 0) == FIV_RET_ERR_PARA, "null dst");
+        CHECK(fiv_matrix_add_vec(dst, NULL, v3, 0) == FIV_RET_ERR_PARA, "null src");
+        CHECK(fiv_matrix_add_vec(dst, src, NULL, 0) == FIV_RET_ERR_PARA, "null vec");
+        /* dim0 needs vec length == cols(3); v2 has length 2 -> mismatch */
+        CHECK(fiv_matrix_add_vec(dst, src, v2, 0) == FIV_RET_ERR_PARA, "dim0 vec length mismatch");
+        /* dim1 needs vec length == rows(2); v3 has length 3 -> mismatch */
+        CHECK(fiv_matrix_add_vec(dst, src, v3, 1) == FIV_RET_ERR_PARA, "dim1 vec length mismatch");
+        /* dim1 with length-2 vec is valid */
+        CHECK(fiv_matrix_add_vec(dst, src, v2, 1) == FIV_RET_OK, "dim1 with length-2 vec OK");
+        /* illegal dim */
+        CHECK(fiv_matrix_add_vec(dst, src, v3, 2) == FIV_RET_ERR_PARA, "bad dim value");
+
+        fiv_release_tensor2d(&src);
+        fiv_release_tensor2d(&dst);
+        fiv_release_tensor1d(&v3);
+        fiv_release_tensor1d(&v2);
+    }
+
+    printf("  [ok] fiv_matrix_add_vec (dim0 per-row / dim1 per-column / in-place / errors)\n");
+}
+
 int main(void)
 {
     printf("=== fiv_matrix_mul_vec ===\n");
@@ -125,6 +220,8 @@ int main(void)
     run_mul_vec(1, 4, 4, "mat(4x4)^T*vec(4)");
     run_mul_vec(0, 1, 5, "mat(1x5)*vec(5)");
     test_error_paths();
+    printf("=== fiv_matrix_add_vec ===\n");
+    test_matrix_add_vec();
     printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

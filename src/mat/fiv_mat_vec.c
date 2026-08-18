@@ -435,3 +435,42 @@ fiv_ret fiv_matrix_mul_vec(fiv_vec* dst, const fiv_mat* mat, const fiv_vec* vec,
 
     return FIV_RET_OK;
 }
+
+
+/* ==================== Matrix + vector (broadcast add) ==================== */
+fiv_ret fiv_matrix_add_vec(fiv_mat* dst, const fiv_mat* src, const fiv_vec* vec, int dim)
+{
+    if (dst == NULL || src == NULL || vec == NULL) return FIV_RET_ERR_PARA;
+    if (dst->data.ptr == NULL || src->data.ptr == NULL || vec->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (dst->dtype != FIV_32F1 || src->dtype != FIV_32F1 || vec->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
+    if (dst->data_continue == 0 || src->data_continue == 0 || vec->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (dst->rows != src->rows || dst->cols != src->cols) return FIV_RET_ERR_PARA;
+
+    const size_t rows = src->rows;
+    const size_t cols = src->cols;
+    const ivf32* s = (const ivf32*)src->data.ptr;
+          ivf32* d = (      ivf32*)dst->data.ptr;
+    const ivf32* v = (const ivf32*)vec->data.ptr;
+
+    if (dim == 0) {
+        /* vector added to each row: vec length must equal cols */
+        if (vec->length != cols) return FIV_RET_ERR_PARA;
+        for (size_t i = 0; i < rows; i++) {
+            const ivf32* sv = s + i * cols;
+                  ivf32* dv = d + i * cols;
+            for (size_t j = 0; j < cols; j++) dv[j] = sv[j] + v[j];
+        }
+    } else if (dim == 1) {
+        /* vector added to each column: vec length must equal rows */
+        if (vec->length != rows) return FIV_RET_ERR_PARA;
+        for (size_t i = 0; i < rows; i++) {
+            const ivf32* sv = s + i * cols;
+                  ivf32* dv = d + i * cols;
+            ivf32 vi = v[i];
+            for (size_t j = 0; j < cols; j++) dv[j] = sv[j] + vi;
+        }
+    } else {
+        return FIV_RET_ERR_PARA;
+    }
+    return FIV_RET_OK;
+}
