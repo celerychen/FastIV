@@ -18,12 +18,6 @@
 extern "C" {
 #endif
 
-/* ReLU / ReLU6 elementwise op. For RELU: out[i] = max(0, in[i]); for RELU6:
-   out[i] = clamp(in[i], 0, 6). The branch is selected by op_state->node_type.
-   in/out must be contiguous float32 tensors with equal element count; out
-   may alias in (in-place). */
-fiv_ret fiv_relu(void* op_state, void* input, void* output);
-
 /* ReLU / ReLU6 op. ReLU and ReLU6 share the same create/release; the active
    node-type id is stored here (set by the caller at create time from the
    requested variant) and consulted only at compute time.
