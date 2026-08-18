@@ -2,7 +2,7 @@
 
 ## 中文
 
-本项目致力于语音、图像与计算机视觉、机器学习与神经网络、大模型、SPICE 仿真相关的高性能算法，在各类异构体系架构下的最优化实现。
+本项目致力于语音、图像与计算机视觉，SLAM、机器学习与神经网络、大模型、SPICE仿真，金融时序预测等相关的高性能算法，在各类异构体系架构下的最优化实现。
 
 ### 模块简介
 
@@ -12,7 +12,7 @@
 
 ## English
 
-FastIV is dedicated to high-performance algorithms for speech, image and computer vision, machine learning and neural networks, large models, and SPICE simulation, with optimized implementations across a variety of heterogeneous architectures.
+FastIV is dedicated to high-performance algorithms for speech, image and computer vision, SLAM, machine learning and neural networks, large models, SPICE simulation, and financial time-series prediction, with optimized implementations across a variety of heterogeneous architectures.
 
 ### Modules
 

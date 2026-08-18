@@ -32,7 +32,7 @@ static fiv_ret fiv_linear_compute(fiv_linear_node* n, fiv_mat* out, const fiv_ma
     if (in->data_continue == 0 || out->data_continue == 0) return FIV_RET_ERR_PARA;
 
     /* output = input * weight^T   (weight stored as [out_features, in_features]) */
-    fiv_ret r = fiv_matrix_mul(out, in, n->weight, 0, 1, 1.0f, 0.0f);
+    fiv_ret r = fiv_matrix_mul(out, in, n->weight, 0, 1, FIV_SCALAR_FP32(1.0f), FIV_SCALAR_FP32(0.0f));
     if (r != FIV_RET_OK) return r;
 
     if (n->bias) {
@@ -149,22 +149,16 @@ fiv_ret fiv_linear_node_backward(void* op_state, void* grad_input, const void* g
     fiv_mat* gi = (fiv_mat*)grad_input;
     if (!n || !n->weight || !n->grad_weight || !go || !x) return FIV_RET_ERR_PARA;
 
-    size_t N   = x->rows;
-    size_t out = (size_t)n->out_features;
-
-    fiv_ret r = fiv_matrix_mul(n->grad_weight, go, x, 1, 0, 1.0f, 1.0f);
+    fiv_ret r = fiv_matrix_mul(n->grad_weight, go, x, 1, 0, FIV_SCALAR_FP32(1.0f), FIV_SCALAR_FP32(1.0f));
     if (r != FIV_RET_OK) return r;
 
-    const ivf32* g = go->data.fl;
-    ivf32* db = n->grad_bias->data.fl;
-    for (size_t j = 0; j < out; j++) {
-        float s = 0.0f;
-        for (size_t i = 0; i < N; i++) s += g[i * out + j];
-        db[j] += s;
-    }
+    /* db = batch sum of grad_output (dim 0), accumulated (beta=1) so it composes
+       with multi-consumer / multi-call BP; the engine resets grad_bias per step. */
+    fiv_ret r2 = fiv_matrix_reduce_sum((void*)n->grad_bias, (fiv_mat*)go, 0, FIV_SCALAR_FP32(1.0f));
+    if (r2 != FIV_RET_OK) return r2;
 
     if (gi) {
-        r = fiv_matrix_mul(gi, go, n->weight, 0, 0, 1.0f, 1.0f);
+        r = fiv_matrix_mul(gi, go, n->weight, 0, 0, FIV_SCALAR_FP32(1.0f), FIV_SCALAR_FP32(1.0f));
         if (r != FIV_RET_OK) return r;
     }
     return FIV_RET_OK;

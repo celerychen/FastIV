@@ -154,6 +154,19 @@ typedef struct {
     }data;
 } fiv_scalar;
 
+/* Declare a scalar on the stack with id/dtype preset to the given type; the union
+   is zero-initialized, so the caller only needs to set the value member. */
+#define FIV_DECLAR_SCALAR_INT32(name)  fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_32S1, .data = {0} }
+#define FIV_DECLAR_SCALAR_UINT32(name) fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_32U1, .data = {0} }
+#define FIV_DECLAR_SCALAR_INT64(name)  fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_64S1, .data = {0} }
+#define FIV_DECLAR_SCALAR_UINT64(name) fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_64U1, .data = {0} }
+#define FIV_DECLAR_SCALAR_FP32(name)   fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_32F1, .data = {0} }
+#define FIV_DECLAR_SCALAR_FP64(name)   fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_64F1, .data = {0} }
+
+/* Build an fp32 scalar literal (compound literal) for passing as an alpha/beta
+   coefficient to the matrix ops: FIV_SCALAR_FP32(1.0f). */
+#define FIV_SCALAR_FP32(v) ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_32F1, .data = { .value_fp32 = (v) } })
+
 
 /* ============================== Aliases ============================== */
 typedef fiv_tensor2d fiv_mat;

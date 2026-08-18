@@ -14,12 +14,16 @@
 #include "fiv_common.h"
 
 /* Reduce a matrix to a vector or a scalar by summing along one axis.
-   dim == 0: sum over rows -> dst[j] = sum_i src[i, j]  (dst: vector, length == cols)
-   dim == 1: sum over cols -> dst[i] = sum_j src[i, j]  (dst: vector, length == rows)
-   dim == -1: total sum -> dst[0] = sum_{i,j} src[i, j] (dst: scalar) */
-fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim)
+   dst = beta * dst + sum(src along dim):
+   dim == 0: sum over rows -> dst[j] = beta*dst[j] + sum_i src[i, j]  (dst: vector, length == cols)
+   dim == 1: sum over cols -> dst[i] = beta*dst[i] + sum_j src[i, j]  (dst: vector, length == rows)
+   dim == -1: total sum -> dst = beta*dst + sum_{i,j} src[i, j]       (dst: scalar) */
+fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim, fiv_scalar beta)
 {
     if (!dst || !src) return FIV_RET_ERR_PARA;
+    if (beta.id != FIV_ID_SCALAR) return FIV_RET_ERR_PARA;
+    if (beta.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
+    ivf32 b = beta.data.value_fp32;
     if (src->id != FIV_ID_TENSOR2D || src->dtype != FIV_32F1 || src->data_continue == 0)
         return FIV_RET_ERR_PARA;
 
@@ -37,14 +41,14 @@ fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim)
             for (size_t j = 0; j < cols; j++) {
                 float acc = 0.0f;
                 for (size_t i = 0; i < rows; i++) acc += s[i * cols + j];
-                d[j] = acc;
+                d[j] = b * d[j] + acc;
             }
         } else {
             if (out->length != rows) return FIV_RET_ERR_PARA;
             for (size_t i = 0; i < rows; i++) {
                 float acc = 0.0f;
                 for (size_t j = 0; j < cols; j++) acc += s[i * cols + j];
-                d[i] = acc;
+                d[i] = b * d[i] + acc;
             }
         }
     } else if (dim == -1) {
@@ -54,7 +58,7 @@ fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim)
         float acc = 0.0f;
         size_t n = rows * cols;
         for (size_t k = 0; k < n; k++) acc += s[k];
-        out->data.value_fp32 = acc;
+        out->data.value_fp32 = b * out->data.value_fp32 + acc;
     } else {
         return FIV_RET_ERR_PARA;
     }
