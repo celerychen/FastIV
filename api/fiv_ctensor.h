@@ -30,6 +30,7 @@ typedef enum : iv8u {
     FIV_ID_TENSOR4D,
     FIV_ID_TENSOR5D,
     FIV_ID_IMAGE,
+    FIV_ID_SCALAR,
 } fiv_data_id;
 
 
@@ -136,6 +137,22 @@ typedef struct {
     };
     size_t strides[5];
 } fiv_tensor5d;
+
+
+/* ============================== Scalar (0D) ============================== */
+/* A single value: one element of dtype, with data being the element union. */
+typedef struct {
+    fiv_data_id   id;
+    fiv_data_type dtype;
+    union {
+        iv32s value_int32;
+        iv32s value_uint32;
+        iv64s value_int64;
+        iv64u value_uint64;
+        ivf32 value_fp32;
+        ivf64 value_fp64;
+    }data;
+} fiv_scalar;
 
 
 /* ============================== Aliases ============================== */
