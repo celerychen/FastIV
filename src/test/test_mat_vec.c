@@ -224,7 +224,7 @@ static void test_matrix_reduce_sum(void)
     {
         fiv_vec* dst = fiv_create_tensor1d(3, FIV_32F1);
         CHECK(dst != NULL, "alloc dim0 dst");
-        CHECK(fiv_matrix_reduce_sum(dst, src, 0) == FIV_RET_OK, "reduce dim0 OK");
+        CHECK(fiv_matrix_reduce_sum(dst, src, 0, FIV_SCALAR_FP32(0.0f)) == FIV_RET_OK, "reduce dim0 OK");
         float exp[3] = { 5, 7, 9 };
         int bad = 0;
         for (int k = 0; k < 3; k++) if (fabsf_local(dst->data.fl[k] - exp[k]) > 1e-6f) bad++;
@@ -232,11 +232,26 @@ static void test_matrix_reduce_sum(void)
         fiv_release_tensor1d(&dst);
     }
 
+    /* accumulation: beta = 1.0 accumulates onto a pre-seeded dst. This mirrors
+       the bias-gradient path, where grad_bias is accumulated across multiple
+       consumers of the same node. */
+    {
+        fiv_vec* dst = fiv_create_tensor1d(3, FIV_32F1);
+        CHECK(dst != NULL, "alloc acc dst");
+        dst->data.fl[0] = 1.0f; dst->data.fl[1] = 2.0f; dst->data.fl[2] = 3.0f;  /* seed */
+        CHECK(fiv_matrix_reduce_sum(dst, src, 0, FIV_SCALAR_FP32(1.0f)) == FIV_RET_OK, "reduce dim0 acc OK");
+        float exp[3] = { 6, 9, 12 };   /* seed [1,2,3] + column sums [5,7,9] */
+        int bad = 0;
+        for (int k = 0; k < 3; k++) if (fabsf_local(dst->data.fl[k] - exp[k]) > 1e-6f) bad++;
+        CHECK(bad == 0, "dim0 acc: seed + column sums");
+        fiv_release_tensor1d(&dst);
+    }
+
     /* dim == 1: sum over cols -> per-row sums [1+2+3, 4+5+6] = [6,15] */
     {
         fiv_vec* dst = fiv_create_tensor1d(2, FIV_32F1);
         CHECK(dst != NULL, "alloc dim1 dst");
-        CHECK(fiv_matrix_reduce_sum(dst, src, 1) == FIV_RET_OK, "reduce dim1 OK");
+        CHECK(fiv_matrix_reduce_sum(dst, src, 1, FIV_SCALAR_FP32(0.0f)) == FIV_RET_OK, "reduce dim1 OK");
         float exp[2] = { 6, 15 };
         int bad = 0;
         for (int k = 0; k < 2; k++) if (fabsf_local(dst->data.fl[k] - exp[k]) > 1e-6f) bad++;
@@ -246,10 +261,8 @@ static void test_matrix_reduce_sum(void)
 
     /* dim == -1: total sum = 21 (scalar) */
     {
-        fiv_scalar sc;
-        sc.id = FIV_ID_SCALAR;
-        sc.dtype = FIV_32F1;
-        CHECK(fiv_matrix_reduce_sum(&sc, src, -1) == FIV_RET_OK, "reduce dim-1 OK");
+        FIV_DECLAR_SCALAR_FP32(sc);
+        CHECK(fiv_matrix_reduce_sum(&sc, src, -1, FIV_SCALAR_FP32(0.0f)) == FIV_RET_OK, "reduce dim-1 OK");
         CHECK(fabsf_local(sc.data.value_fp32 - 21.0f) < 1e-6f, "dim-1: total sum = 21 (scalar)");
     }
 
@@ -259,22 +272,25 @@ static void test_matrix_reduce_sum(void)
         fiv_vec* v2 = fiv_create_tensor1d(2, FIV_32F1);   /* OK for dim1, wrong for dim0 */
         CHECK(v3 != NULL && v2 != NULL, "alloc error-path vecs");
 
-        CHECK(fiv_matrix_reduce_sum(NULL, src, 0) == FIV_RET_ERR_PARA, "null dst");
-        CHECK(fiv_matrix_reduce_sum(v3, NULL, 0) == FIV_RET_ERR_PARA, "null src");
+        CHECK(fiv_matrix_reduce_sum(NULL, src, 0, FIV_SCALAR_FP32(0.0f)) == FIV_RET_ERR_PARA, "null dst");
+        CHECK(fiv_matrix_reduce_sum(v3, NULL, 0, FIV_SCALAR_FP32(0.0f)) == FIV_RET_ERR_PARA, "null src");
         /* dim0 needs dst length == cols(3); v2 has length 2 -> mismatch */
-        CHECK(fiv_matrix_reduce_sum(v2, src, 0) == FIV_RET_ERR_PARA, "dim0 dst length mismatch");
+        CHECK(fiv_matrix_reduce_sum(v2, src, 0, FIV_SCALAR_FP32(0.0f)) == FIV_RET_ERR_PARA, "dim0 dst length mismatch");
         /* dim1 needs dst length == rows(2); v3 has length 3 -> mismatch */
-        CHECK(fiv_matrix_reduce_sum(v3, src, 1) == FIV_RET_ERR_PARA, "dim1 dst length mismatch");
+        CHECK(fiv_matrix_reduce_sum(v3, src, 1, FIV_SCALAR_FP32(0.0f)) == FIV_RET_ERR_PARA, "dim1 dst length mismatch");
         /* dim-1 requires a scalar dst; a fiv_vec is not accepted */
-        CHECK(fiv_matrix_reduce_sum(v3, src, -1) == FIV_RET_ERR_PARA, "dim-1 dst is not scalar");
+        CHECK(fiv_matrix_reduce_sum(v3, src, -1, FIV_SCALAR_FP32(0.0f)) == FIV_RET_ERR_PARA, "dim-1 dst is not scalar");
         /* illegal dim */
-        CHECK(fiv_matrix_reduce_sum(v3, src, 2) == FIV_RET_ERR_PARA, "bad dim value");
+        CHECK(fiv_matrix_reduce_sum(v3, src, 2, FIV_SCALAR_FP32(0.0f)) == FIV_RET_ERR_PARA, "bad dim value");
 
         /* valid scalar dst for dim-1 */
-        fiv_scalar sc;
-        sc.id = FIV_ID_SCALAR;
-        sc.dtype = FIV_32F1;
-        CHECK(fiv_matrix_reduce_sum(&sc, src, -1) == FIV_RET_OK, "dim-1 scalar dst OK");
+        FIV_DECLAR_SCALAR_FP32(sc);
+        CHECK(fiv_matrix_reduce_sum(&sc, src, -1, FIV_SCALAR_FP32(0.0f)) == FIV_RET_OK, "dim-1 scalar dst OK");
+
+        /* beta must be an fp32 scalar; a non-fp32 scalar is rejected */
+        FIV_DECLAR_SCALAR_INT32(bad_beta);
+        bad_beta.data.value_int32 = 1;
+        CHECK(fiv_matrix_reduce_sum(v3, src, 0, bad_beta) == FIV_RET_ERR_NOT_SUPPORT, "non-fp32 beta rejected");
 
         fiv_release_tensor1d(&v3);
         fiv_release_tensor1d(&v2);

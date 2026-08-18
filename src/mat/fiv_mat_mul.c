@@ -1693,12 +1693,17 @@ static void fiv_matrix_mul_real32(
    ========================================================================== */
 
 fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
-                       int a_transpose, int b_transpose, ivf32 alpha, ivf32 beta)
+                       int a_transpose, int b_transpose, fiv_scalar alpha, fiv_scalar beta)
 {
     if (dst == NULL || A == NULL || B == NULL) return FIV_RET_ERR_PARA;
     if (dst->data.ptr == NULL || A->data.ptr == NULL || B->data.ptr == NULL) return FIV_RET_ERR_PARA;
     if (dst->data_continue == 0 || A->data_continue == 0 || B->data_continue == 0) return FIV_RET_ERR_PARA;
     if (A->dtype != FIV_32F1 || B->dtype != FIV_32F1 || dst->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
+    /* alpha/beta must be fp32 scalars (FIV_32F1); any other type is unsupported */
+    if (alpha.id != FIV_ID_SCALAR || alpha.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
+    if (beta.id != FIV_ID_SCALAR || beta.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
+    ivf32 alpha_f = alpha.data.value_fp32;
+    ivf32 beta_f  = beta.data.value_fp32;
     /* in-place (dst aliasing A or B) is not supported */
     if (dst->data.ptr == A->data.ptr || dst->data.ptr == B->data.ptr) return FIV_RET_ERR_PARA;
 
@@ -1730,16 +1735,16 @@ fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
     if (ws_bytes <= FIV_MAT_MUL_L3_LIMIT_BYTES) {
         /* small (non-blocked) path */
         if (!a_transpose && !b_transpose)
-            fiv_small_matrix_mul_matrix_real32(a, ra, ca, ca, b, cb, cb, c, N, alpha, beta);
+            fiv_small_matrix_mul_matrix_real32(a, ra, ca, ca, b, cb, cb, c, N, alpha_f, beta_f);
         else if (!a_transpose && b_transpose)
-            fiv_small_matrix_mul_matrix_t_real32(a, ra, ca, ca, b, rb, cb, c, N, alpha, beta);
+            fiv_small_matrix_mul_matrix_t_real32(a, ra, ca, ca, b, rb, cb, c, N, alpha_f, beta_f);
         else if (a_transpose && !b_transpose)
-            fiv_small_matrix_t_mul_matrix_real32(a, ra, ca, ca, b, cb, cb, c, N, alpha, beta);
+            fiv_small_matrix_t_mul_matrix_real32(a, ra, ca, ca, b, cb, cb, c, N, alpha_f, beta_f);
         else
-            fiv_small_matrix_t_mul_matrix_t_real32(a, ra, ca, ca, b, rb, cb, c, N, alpha, beta);
+            fiv_small_matrix_t_mul_matrix_t_real32(a, ra, ca, ca, b, rb, cb, c, N, alpha_f, beta_f);
     } else {
         /* large (blocked) path */
-        fiv_matrix_mul_real32(a_transpose, b_transpose, M, N, K, alpha, a, ca, b, cb, beta, c, N);
+        fiv_matrix_mul_real32(a_transpose, b_transpose, M, N, K, alpha_f, a, ca, b, cb, beta_f, c, N);
     }
 
     dst->shapes[0]   = (size_t)M;

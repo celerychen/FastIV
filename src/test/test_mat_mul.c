@@ -78,7 +78,7 @@ static void run_case(int a_t, int b_t, int ra, int ca, int rb, int cb,
     ref_gemm(a_t, b_t, M, N, a_t ? ra : ca, alpha,
              A->data.fl, ra, ca, B->data.fl, rb, cb, beta, exp);
 
-    fiv_ret r = fiv_matrix_mul(C, A, B, a_t, b_t, alpha, beta);
+    fiv_ret r = fiv_matrix_mul(C, A, B, a_t, b_t, FIV_SCALAR_FP32(alpha), FIV_SCALAR_FP32(beta));
     CHECK(r == FIV_RET_OK, name);
 
     if (r == FIV_RET_OK) {
@@ -112,29 +112,34 @@ static void test_error_paths(void)
     fiv_mat* c = fiv_create_tensor2d(sh2, FIV_32F1);
     CHECK(a != NULL && b != NULL && c != NULL, "alloc ok");
 
-    CHECK(fiv_matrix_mul(c, a, b, 0, 0, 1.f, 0.f) == FIV_RET_OK, "baseline 3x3 ok");
-    CHECK(fiv_matrix_mul(NULL, a, b, 0, 0, 1.f, 0.f) == FIV_RET_ERR_PARA, "null dst");
-    CHECK(fiv_matrix_mul(c, NULL, b, 0, 0, 1.f, 0.f) == FIV_RET_ERR_PARA, "null A");
-    CHECK(fiv_matrix_mul(c, a, NULL, 0, 0, 1.f, 0.f) == FIV_RET_ERR_PARA, "null B");
-    CHECK(fiv_matrix_mul(a, a, b, 0, 0, 1.f, 0.f) == FIV_RET_ERR_PARA, "in-place dst==A");
-    CHECK(fiv_matrix_mul(b, a, b, 0, 0, 1.f, 0.f) == FIV_RET_ERR_PARA, "in-place dst==B");
+    CHECK(fiv_matrix_mul(c, a, b, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_OK, "baseline 3x3 ok");
+    CHECK(fiv_matrix_mul(NULL, a, b, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_PARA, "null dst");
+    CHECK(fiv_matrix_mul(c, NULL, b, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_PARA, "null A");
+    CHECK(fiv_matrix_mul(c, a, NULL, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_PARA, "null B");
+    CHECK(fiv_matrix_mul(a, a, b, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_PARA, "in-place dst==A");
+    CHECK(fiv_matrix_mul(b, a, b, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_PARA, "in-place dst==B");
 
     /* unsupported dtype: 8U dst */
     fiv_mat* c8 = fiv_create_tensor2d(sh2, FIV_8U1);
-    CHECK(fiv_matrix_mul(c8, a, b, 0, 0, 1.f, 0.f) == FIV_RET_ERR_NOT_SUPPORT, "8U dst not supported");
+    CHECK(fiv_matrix_mul(c8, a, b, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_NOT_SUPPORT, "8U dst not supported");
     fiv_release_tensor2d(&c8);
 
     /* K mismatch: A(3x3) * B(5x5) */
     size_t sh5[2] = { 5, 5 };
     fiv_mat* b5 = fiv_create_tensor2d(sh5, FIV_32F1);
-    CHECK(fiv_matrix_mul(c, a, b5, 0, 0, 1.f, 0.f) == FIV_RET_ERR_PARA, "K mismatch");
+    CHECK(fiv_matrix_mul(c, a, b5, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_PARA, "K mismatch");
     fiv_release_tensor2d(&b5);
 
     /* dst wrong shape: 3x4 vs 3x3 result */
     size_t shw[2] = { 3, 4 };
     fiv_mat* cw = fiv_create_tensor2d(shw, FIV_32F1);
-    CHECK(fiv_matrix_mul(cw, a, b, 0, 0, 1.f, 0.f) == FIV_RET_ERR_PARA, "dst wrong shape");
+    CHECK(fiv_matrix_mul(cw, a, b, 0, 0, FIV_SCALAR_FP32(1.f), FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_PARA, "dst wrong shape");
     fiv_release_tensor2d(&cw);
+
+    /* alpha must be an fp32 scalar; a non-fp32 scalar is rejected */
+    FIV_DECLAR_SCALAR_INT32(bad_a);
+    bad_a.data.value_int32 = 1;
+    CHECK(fiv_matrix_mul(c, a, b, 0, 0, bad_a, FIV_SCALAR_FP32(0.f)) == FIV_RET_ERR_NOT_SUPPORT, "non-fp32 alpha rejected");
 
     fiv_release_tensor2d(&a);
     fiv_release_tensor2d(&b);

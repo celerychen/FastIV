@@ -50,8 +50,10 @@ fiv_ret fiv_matrix_mul_vec(fiv_vec* dst, const fiv_mat* mat, const fiv_vec* vec,
    B) is NOT supported and returns FIV_RET_ERR_PARA. Non-32F dtypes return
    FIV_RET_ERR_NOT_SUPPORT, any shape/dtype mismatch returns FIV_RET_ERR_PARA.
    On success dst's metadata is rewritten to describe the M x N result. */
+/* alpha and beta are fp32 scaling factors carried as fiv_scalar (FIV_32F1); a
+   non-fp32 scalar is rejected with FIV_RET_ERR_NOT_SUPPORT. */
 fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
-                       int a_transpose, int b_transpose, ivf32 alpha, ivf32 beta);
+                       int a_transpose, int b_transpose, fiv_scalar alpha, fiv_scalar beta);
 
 /* Add a vector to a matrix with broadcasting along one axis.
    dim == 0 (row direction): the vector is added to every row; vec->length must
@@ -64,18 +66,22 @@ fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
    (in-place). */
 fiv_ret fiv_matrix_add_vec(fiv_mat* dst, const fiv_mat* src, const fiv_vec* vec, int dim);
 
-/* Reduce a matrix to a vector by summing along one axis (float32 only).
+/* Reduce a matrix to a vector or a scalar by summing along one axis (float32
+   only), with accumulation: dst = beta * dst + sum(src along dim).
    dim == 0 (row direction): sum over rows; dst is a vector of length src->cols
-     and dst[j] = sum_i src[i, j].
+     and dst[j] = beta*dst[j] + sum_i src[i, j].
    dim == 1 (column direction): sum over columns; dst is a vector of length
-     src->rows and dst[i] = sum_j src[i, j].
-   dim == -1: sum every element into a single scalar held as a vector of length
-     1 at dst[0].
-   dst must be a contiguous float32 1D tensor whose length matches the axis being
-   reduced (length 1 for dim == -1); a length mismatch or dim not in {-1,0,1}
+     src->rows and dst[i] = beta*dst[i] + sum_j src[i, j].
+   dim == -1: sum every element into a single scalar; dst is a fiv_scalar and
+     dst = beta*dst + sum_{i,j} src[i, j].
+   Pass beta == 0 to overwrite (no accumulation). dst must be a contiguous
+   float32 1D tensor (length 1 for dim == -1, held as a fiv_scalar) whose length
+   matches the axis being reduced; a length mismatch or dim not in {-1,0,1}
    returns FIV_RET_ERR_PARA. src must be a contiguous float32 matrix; other
-   dtypes return FIV_RET_ERR_NOT_SUPPORT. dst is overwritten. */
-fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim);
+   dtypes return FIV_RET_ERR_NOT_SUPPORT. */
+/* beta is an fp32 scaling factor carried as fiv_scalar (FIV_32F1); a non-fp32
+   scalar is rejected with FIV_RET_ERR_NOT_SUPPORT. */
+fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim, fiv_scalar beta);
 
 
 #ifdef __cplusplus
