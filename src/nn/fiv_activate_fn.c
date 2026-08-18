@@ -16,7 +16,7 @@
 #include "fiv_common.h"
 #include "fiv_ctensor.h"
 
-fiv_ret fiv_relu(void* op_state, void* input, void* output)
+static fiv_ret fiv_relu(void* op_state, void* input, void* output)
 {
     if (!input || !output) return FIV_RET_ERR_PARA;
 
