@@ -211,6 +211,79 @@ static void test_matrix_add_vec(void)
     printf("  [ok] fiv_matrix_add_vec (dim0 per-row / dim1 per-column / in-place / errors)\n");
 }
 
+static void test_matrix_reduce_sum(void)
+{
+    /* src = [[1,2,3],[4,5,6]] (2x3) */
+    size_t sh[2] = { 2, 3 };
+    fiv_mat* src = fiv_create_tensor2d(sh, FIV_32F1);
+    CHECK(src != NULL, "alloc ok");
+    float m[6] = { 1, 2, 3, 4, 5, 6 };
+    memcpy(src->data.fl, m, sizeof(m));
+
+    /* dim == 0: sum over rows -> per-column sums [1+4, 2+5, 3+6] = [5,7,9] */
+    {
+        fiv_vec* dst = fiv_create_tensor1d(3, FIV_32F1);
+        CHECK(dst != NULL, "alloc dim0 dst");
+        CHECK(fiv_matrix_reduce_sum(dst, src, 0) == FIV_RET_OK, "reduce dim0 OK");
+        float exp[3] = { 5, 7, 9 };
+        int bad = 0;
+        for (int k = 0; k < 3; k++) if (fabsf_local(dst->data.fl[k] - exp[k]) > 1e-6f) bad++;
+        CHECK(bad == 0, "dim0: column sums correct");
+        fiv_release_tensor1d(&dst);
+    }
+
+    /* dim == 1: sum over cols -> per-row sums [1+2+3, 4+5+6] = [6,15] */
+    {
+        fiv_vec* dst = fiv_create_tensor1d(2, FIV_32F1);
+        CHECK(dst != NULL, "alloc dim1 dst");
+        CHECK(fiv_matrix_reduce_sum(dst, src, 1) == FIV_RET_OK, "reduce dim1 OK");
+        float exp[2] = { 6, 15 };
+        int bad = 0;
+        for (int k = 0; k < 2; k++) if (fabsf_local(dst->data.fl[k] - exp[k]) > 1e-6f) bad++;
+        CHECK(bad == 0, "dim1: row sums correct");
+        fiv_release_tensor1d(&dst);
+    }
+
+    /* dim == -1: total sum = 21 (scalar) */
+    {
+        fiv_scalar sc;
+        sc.id = FIV_ID_SCALAR;
+        sc.dtype = FIV_32F1;
+        CHECK(fiv_matrix_reduce_sum(&sc, src, -1) == FIV_RET_OK, "reduce dim-1 OK");
+        CHECK(fabsf_local(sc.data.value_fp32 - 21.0f) < 1e-6f, "dim-1: total sum = 21 (scalar)");
+    }
+
+    /* error paths: null args, type/length mismatch, bad dim */
+    {
+        fiv_vec* v3 = fiv_create_tensor1d(3, FIV_32F1);   /* OK for dim0, wrong for dim1 */
+        fiv_vec* v2 = fiv_create_tensor1d(2, FIV_32F1);   /* OK for dim1, wrong for dim0 */
+        CHECK(v3 != NULL && v2 != NULL, "alloc error-path vecs");
+
+        CHECK(fiv_matrix_reduce_sum(NULL, src, 0) == FIV_RET_ERR_PARA, "null dst");
+        CHECK(fiv_matrix_reduce_sum(v3, NULL, 0) == FIV_RET_ERR_PARA, "null src");
+        /* dim0 needs dst length == cols(3); v2 has length 2 -> mismatch */
+        CHECK(fiv_matrix_reduce_sum(v2, src, 0) == FIV_RET_ERR_PARA, "dim0 dst length mismatch");
+        /* dim1 needs dst length == rows(2); v3 has length 3 -> mismatch */
+        CHECK(fiv_matrix_reduce_sum(v3, src, 1) == FIV_RET_ERR_PARA, "dim1 dst length mismatch");
+        /* dim-1 requires a scalar dst; a fiv_vec is not accepted */
+        CHECK(fiv_matrix_reduce_sum(v3, src, -1) == FIV_RET_ERR_PARA, "dim-1 dst is not scalar");
+        /* illegal dim */
+        CHECK(fiv_matrix_reduce_sum(v3, src, 2) == FIV_RET_ERR_PARA, "bad dim value");
+
+        /* valid scalar dst for dim-1 */
+        fiv_scalar sc;
+        sc.id = FIV_ID_SCALAR;
+        sc.dtype = FIV_32F1;
+        CHECK(fiv_matrix_reduce_sum(&sc, src, -1) == FIV_RET_OK, "dim-1 scalar dst OK");
+
+        fiv_release_tensor1d(&v3);
+        fiv_release_tensor1d(&v2);
+    }
+
+    fiv_release_tensor2d(&src);
+    printf("  [ok] fiv_matrix_reduce_sum (dim0 col-sum / dim1 row-sum / dim-1 total / errors)\n");
+}
+
 int main(void)
 {
     printf("=== fiv_matrix_mul_vec ===\n");
@@ -222,6 +295,8 @@ int main(void)
     test_error_paths();
     printf("=== fiv_matrix_add_vec ===\n");
     test_matrix_add_vec();
+    printf("=== fiv_matrix_reduce_sum ===\n");
+    test_matrix_reduce_sum();
     printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }
