@@ -15,15 +15,6 @@
 #include "fiv_matrix.h"
 #include "fiv_common.h"
 
-/* Deterministic LCG so training is reproducible across runs. */
-static unsigned g_seed = 12345u;
-
-static float fiv_nn_rand(void)
-{
-    g_seed = g_seed * 1103515245u + 12345u;
-    return ((float)((g_seed >> 8) & 0xffffff) / 16777216.0f) * 2.0f - 1.0f;   /* [-1, 1] */
-}
-
 static fiv_ret fiv_linear_compute(fiv_linear_node* n, fiv_mat* out, const fiv_mat* in)
 {
     if (!n || !n->weight || !in || !out) return FIV_RET_ERR_PARA;

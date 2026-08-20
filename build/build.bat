@@ -41,6 +41,9 @@ echo [GCC] compiling objects...
 %GCC% -std=c23 -O2 -I "%API%" -c "%NN%\fiv_nn_topo.c"         -o "%OBJ%\fiv_nn_topo.o"
 %GCC% -std=c23 -O2 -I "%API%" -c "%NN%\fiv_nn_infer.c"        -o "%OBJ%\fiv_nn_infer.o"
 %GCC% -std=c23 -O2 -I "%API%" -c "%NN%\fiv_nn_train.c"        -o "%OBJ%\fiv_nn_train.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%NN%\fiv_nn_conv2d.c"  -o "%OBJ%\fiv_nn_conv2d.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%NN%\fiv_flatten_node.c"  -o "%OBJ%\fiv_flatten_node.o"
+%GCC% -std=c23 -O2 -I "%API%" -c "%NN%\fiv_max_2d.c"  -o "%OBJ%\fiv_max_2d.o"
 %GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_darray.c"  -o "%OBJ%\test_darray.o"
 %GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_ctensor.c" -o "%OBJ%\test_ctensor.o"
 %GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_mat_transpose.c" -o "%OBJ%\test_mat_transpose.o"
@@ -48,6 +51,8 @@ echo [GCC] compiling objects...
 %GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_mat_mul.c"       -o "%OBJ%\test_mat_mul.o"
 %GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_nn.c"  -o "%OBJ%\test_nn.o"
 %GCC% -std=c23 -O2 -I "%API%" -c "%TEST%\test_nn_mnist.c"  -o "%OBJ%\test_nn_mnist.o"
+%GCC% -std=c23 -O2 -I "%API%" -I "%NN%" -c "%TEST%\test_nn_conv2d.c"  -o "%OBJ%\test_nn_conv2d.o"
+%GCC% -std=c23 -O2 -I "%API%" -I "%NN%" -c "%TEST%\test_nn_mnist_conv.c"  -o "%OBJ%\test_nn_mnist_conv.o"
 if errorlevel 1 (echo GCC compile FAILED & exit /b 1)
 
 echo [GCC] linking test_darray...
@@ -66,12 +71,21 @@ echo [GCC] linking test_mat_mul...
 %GCC% -std=c23 -O2 "%OBJ%\test_mat_mul.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_mul.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_nn...
-%GCC% -std=c23 -O2 "%OBJ%\test_nn.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn.exe"
+%GCC% -std=c23 -O2 "%OBJ%\test_nn.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_nn_mnist...
-%GCC% -std=c23 -O2 "%OBJ%\test_nn_mnist.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_mnist.exe"
+%GCC% -std=c23 -O2 "%OBJ%\test_nn_mnist.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_mnist.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
-echo [GCC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe, %BIN%\test_mat_transpose.exe, %BIN%\test_mat_vec.exe, %BIN%\test_mat_mul.exe, %BIN%\test_nn.exe, %BIN%\test_nn_mnist.exe
+echo [MSVC] linking test_nn_mnist_conv...
+%CL% /utf-8 /O2 "%OBJ%\test_nn_mnist_conv.obj" "%OBJ%\fiv_nn_infer.obj" "%OBJ%\fiv_nn_topo.obj" "%OBJ%\fiv_nn_train.obj" "%OBJ%\fiv_linear_node.obj" "%OBJ%\fiv_activate_fn.obj" "%OBJ%\fiv_nn_conv2d.obj" "%OBJ%\fiv_flatten_node.obj" "%OBJ%\fiv_max_2d.obj" "%OBJ%\fiv_mat_vec.obj" "%OBJ%\fiv_mat_reduce.obj" "%OBJ%\fiv_mat_mul.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_nn_mnist_conv.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [GCC] linking test_nn_mnist_conv...
+%GCC% -std=c23 -O2 "%OBJ%\test_nn_mnist_conv.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_mnist_conv.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [GCC] linking test_nn_conv2d...
+%GCC% -std=c23 -O2 "%OBJ%\test_nn_conv2d.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_conv2d.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [GCC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe, %BIN%\test_mat_transpose.exe, %BIN%\test_mat_vec.exe, %BIN%\test_mat_mul.exe, %BIN%\test_nn.exe, %BIN%\test_nn_mnist.exe, %BIN%\test_nn_conv2d.exe, %BIN%\test_nn_mnist_conv.exe
 goto end
 
 :msvc
@@ -91,6 +105,9 @@ echo [MSVC] compiling objects...
 %CL% /utf-8 /O2 /I "%API%" /c "%NN%\fiv_nn_topo.c"         /Fo"%OBJ%\fiv_nn_topo.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%NN%\fiv_nn_infer.c"        /Fo"%OBJ%\fiv_nn_infer.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%NN%\fiv_nn_train.c"        /Fo"%OBJ%\fiv_nn_train.obj"
+%CL% /utf-8 /O2 /I "%API%" /c "%NN%\fiv_nn_conv2d.c"  /Fo"%OBJ%\fiv_nn_conv2d.obj"
+%CL% /utf-8 /O2 /I "%API%" /c "%NN%\fiv_flatten_node.c"  /Fo"%OBJ%\fiv_flatten_node.obj"
+%CL% /utf-8 /O2 /I "%API%" /c "%NN%\fiv_max_2d.c"  /Fo"%OBJ%\fiv_max_2d.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_darray.c"  /Fo"%OBJ%\test_darray.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_ctensor.c" /Fo"%OBJ%\test_ctensor.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_mat_transpose.c" /Fo"%OBJ%\test_mat_transpose.obj"
@@ -98,6 +115,8 @@ echo [MSVC] compiling objects...
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_mat_mul.c"       /Fo"%OBJ%\test_mat_mul.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_nn.c"  /Fo"%OBJ%\test_nn.obj"
 %CL% /utf-8 /O2 /I "%API%" /c "%TEST%\test_nn_mnist.c"  /Fo"%OBJ%\test_nn_mnist.obj"
+%CL% /utf-8 /O2 /I "%API%" /I "%NN%" /c "%TEST%\test_nn_conv2d.c" /Fo"%OBJ%\test_nn_conv2d.obj"
+%CL% /utf-8 /O2 /I "%API%" /I "%NN%" /c "%TEST%\test_nn_mnist_conv.c" /Fo"%OBJ%\test_nn_mnist_conv.obj"
 if errorlevel 1 (echo MSVC compile FAILED & exit /b 1)
 
 echo [MSVC] linking test_darray...
@@ -116,10 +135,13 @@ echo [MSVC] linking test_mat_mul...
 %CL% /utf-8 /O2 "%OBJ%\test_mat_mul.obj" "%OBJ%\fiv_mat_mul.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_mat_mul.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [MSVC] linking test_nn...
-%CL% /utf-8 /O2 "%OBJ%\test_nn.obj" "%OBJ%\fiv_nn_infer.obj" "%OBJ%\fiv_nn_topo.obj" "%OBJ%\fiv_nn_train.obj" "%OBJ%\fiv_linear_node.obj" "%OBJ%\fiv_activate_fn.obj" "%OBJ%\fiv_mat_mul.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_nn.exe"
+%CL% /utf-8 /O2 "%OBJ%\test_nn.obj" "%OBJ%\fiv_nn_infer.obj" "%OBJ%\fiv_nn_topo.obj" "%OBJ%\fiv_nn_train.obj" "%OBJ%\fiv_linear_node.obj" "%OBJ%\fiv_activate_fn.obj" "%OBJ%\fiv_nn_conv2d.obj" "%OBJ%\fiv_flatten_node.obj" "%OBJ%\fiv_max_2d.obj" "%OBJ%\fiv_mat_vec.obj" "%OBJ%\fiv_mat_reduce.obj" "%OBJ%\fiv_mat_mul.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_nn.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [MSVC] linking test_nn_mnist...
-%CL% /utf-8 /O2 "%OBJ%\test_nn_mnist.obj" "%OBJ%\fiv_nn_infer.obj" "%OBJ%\fiv_nn_topo.obj" "%OBJ%\fiv_nn_train.obj" "%OBJ%\fiv_linear_node.obj" "%OBJ%\fiv_activate_fn.obj" "%OBJ%\fiv_mat_mul.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_nn_mnist.exe"
+%CL% /utf-8 /O2 "%OBJ%\test_nn_mnist.obj" "%OBJ%\fiv_nn_infer.obj" "%OBJ%\fiv_nn_topo.obj" "%OBJ%\fiv_nn_train.obj" "%OBJ%\fiv_linear_node.obj" "%OBJ%\fiv_activate_fn.obj" "%OBJ%\fiv_nn_conv2d.obj" "%OBJ%\fiv_flatten_node.obj" "%OBJ%\fiv_max_2d.obj" "%OBJ%\fiv_mat_vec.obj" "%OBJ%\fiv_mat_reduce.obj" "%OBJ%\fiv_mat_mul.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_nn_mnist.exe"
+if errorlevel 1 (echo link FAILED & exit /b 1)
+echo [MSVC] linking test_nn_conv2d...
+%CL% /utf-8 /O2 "%OBJ%\test_nn_conv2d.obj" "%OBJ%\fiv_nn_conv2d.obj" "%OBJ%\fiv_max_2d.obj" "%OBJ%\fiv_ctensor.obj" "%OBJ%\fiv_binary_op.obj" "%OBJ%\fiv_common.obj" /Fe"%BIN%\test_nn_conv2d.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [MSVC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe, %BIN%\test_mat_transpose.exe, %BIN%\test_mat_vec.exe, %BIN%\test_mat_mul.exe, %BIN%\test_nn.exe, %BIN%\test_nn_mnist.exe
 

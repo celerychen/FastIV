@@ -12,6 +12,7 @@
 #include "fiv_nn_train.h"
 #include "fiv_nn_topo.h"
 #include "fiv_linear_node.h"
+#include "fiv_nn_conv2d.h"
 #include "fiv_matrix.h"
 #include "fiv_common.h"
 
@@ -117,20 +118,37 @@ static void fiv_nn_sgd_update(fiv_nn_network_context* net, float lr)
 {
     for (int i = 1; i < net->node_count; i++) {
         fiv_nn_node_context* nd = &net->nodes[i];
-        if (nd->node_type != FIV_NN_NODE_LINEAR) continue;
-        fiv_linear_node* ln = (fiv_linear_node*)nd->op;
+        if (nd->node_type == FIV_NN_NODE_LINEAR) {
+            fiv_linear_node* ln = (fiv_linear_node*)nd->op;
 
-        size_t nw = (size_t)(ln->in_features * ln->out_features);
-        ivf32* W = ln->weight->data.fl;
-        ivf32* dW = ln->grad_weight->data.fl;
-        for (size_t k = 0; k < nw; k++) W[k] -= lr * dW[k];
-        memset(dW, 0, ln->grad_weight->total_bytes);
+            size_t nw = (size_t)(ln->in_features * ln->out_features);
+            ivf32* W = ln->weight->data.fl;
+            ivf32* dW = ln->grad_weight->data.fl;
+            for (size_t k = 0; k < nw; k++) W[k] -= lr * dW[k];
+            memset(dW, 0, ln->grad_weight->total_bytes);
 
-        size_t nb = (size_t)ln->out_features;
-        ivf32* b = ln->bias->data.fl;
-        ivf32* db = ln->grad_bias->data.fl;
-        for (size_t k = 0; k < nb; k++) b[k] -= lr * db[k];
-        memset(db, 0, ln->grad_bias->total_bytes);
+            size_t nb = (size_t)ln->out_features;
+            ivf32* b = ln->bias->data.fl;
+            ivf32* db = ln->grad_bias->data.fl;
+            for (size_t k = 0; k < nb; k++) b[k] -= lr * db[k];
+            memset(db, 0, ln->grad_bias->total_bytes);
+        } else if (nd->node_type == FIV_NN_NODE_CONV2D_STD) {
+            fiv_conv2d_node* cn = (fiv_conv2d_node*)nd->op;
+
+            size_t nw = (size_t)cn->params.output_channels * (size_t)cn->params.input_channels * 9;
+            ivf32* W = cn->weight->data.fl;
+            ivf32* dW = cn->grad_weight->data.fl;
+            for (size_t k = 0; k < nw; k++) W[k] -= lr * dW[k];
+            memset(dW, 0, cn->grad_weight->total_bytes);
+
+            if (cn->bias && cn->grad_bias) {
+                size_t nb = (size_t)cn->params.output_channels;
+                ivf32* b = cn->bias->data.fl;
+                ivf32* db = cn->grad_bias->data.fl;
+                for (size_t k = 0; k < nb; k++) b[k] -= lr * db[k];
+                memset(db, 0, cn->grad_bias->total_bytes);
+            }
+        }
     }
 }
 

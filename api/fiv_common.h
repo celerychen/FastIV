@@ -19,6 +19,15 @@
 
 
 
+    /************************************************************************/
+    /*
+    deterministic LCG in [-1, 1] shared by weight initializers; the shared
+    seed stream keeps training reproducible across nodes
+    */
+    /************************************************************************/
+    float fiv_nn_rand(void);
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif

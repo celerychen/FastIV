@@ -25,6 +25,12 @@ typedef enum {
     FIV_NN_NODE_LINEAR,
     FIV_NN_NODE_RELU,
     FIV_NN_NODE_RELU6,
+    FIV_NN_NODE_CONV2D_STD,
+    FIV_NN_NODE_CONV2D_DEPTHWISE,
+    FIV_NN_NODE_CONV2D_POINTWISE,
+    FIV_NN_NODE_CONV2D_SEPARABLE,
+    FIV_NN_NODE_FLATTEN,
+    FIV_NN_NODE_MAX2D,
     FIV_NN_NODE_TYPE_NUM
 } fiv_nn_node_type;
 
@@ -33,6 +39,26 @@ typedef struct {
     int in_features;   /* input feature count */
     int out_features;  /* output feature count */
 } fiv_linear_node_params;
+
+
+typedef struct{
+   int conv2d_method; /* CONV2D_STD,CONV2D_DEPTHWISE,CONV2D_POINTWISE,CONV2D_SEPARABLE; */
+   int kernel_size_x;
+   int kernel_size_y;
+   int stride;
+   int padding_method;  /* fill zero or fill edge element */
+   int input_channels;
+   int output_channels;
+   int bias;  /* 0 = no bias, 1 = per-output-channel bias */
+}fiv_conv2d_params;
+
+
+
+
+
+
+
+
 
 /* Create an empty network context; returns NULL on allocation failure. */
 void* fiv_create_neural_network();

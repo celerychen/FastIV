@@ -73,3 +73,12 @@ void* fiv_realloc(void* p, size_t size)
 
 }
 
+
+
+/* Deterministic LCG in [-1, 1]; shared seed stream keeps training reproducible. */
+float fiv_nn_rand(void)
+{
+    static unsigned s = 12345u;
+    s = s * 1103515245u + 12345u;
+    return ((float)((s >> 8) & 0xffffff) / 16777216.0f) * 2.0f - 1.0f;   /* [-1, 1] */
+}
