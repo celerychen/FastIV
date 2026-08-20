@@ -18,6 +18,9 @@
 #include "fiv_nn_topo.h"
 #include "fiv_linear_node.h"
 #include "fiv_activate_fn.h"
+#include "fiv_nn_conv2d.h"
+#include "fiv_flatten_node.h"
+#include "fiv_max_2d.h"
 #include "fiv_matrix.h"
 #include "fiv_common.h"
 
@@ -48,11 +51,14 @@ void* fiv_create_neural_network()
 static void* fiv_nn_make_op(int node_type, void* params)
 {
     switch (node_type) {
-    case FIV_NN_NODE_LINEAR: return fiv_linear_node_create(params);
+    case FIV_NN_NODE_LINEAR:    return fiv_linear_node_create(params);
     case FIV_NN_NODE_RELU:
     case FIV_NN_NODE_RELU6:
         return fiv_relu_node_create((void*)(intptr_t)node_type);
-    default:                 return NULL;
+    case FIV_NN_NODE_CONV2D_STD: return fiv_conv2d_node_create(params);
+    case FIV_NN_NODE_FLATTEN:    return fiv_flatten_node_create(params);
+    case FIV_NN_NODE_MAX2D:      return fiv_max_2d_node_create(params);
+    default:                     return NULL;
     }
 }
 
@@ -343,6 +349,10 @@ fiv_ret fiv_neural_network_save_model(char* model_name, void* nn_context)
             fiv_linear_node* ln = (fiv_linear_node*)nd->op;
             in_f  = (int32_t)ln->in_features;
             out_f = (int32_t)ln->out_features;
+        } else if (nd->node_type == FIV_NN_NODE_CONV2D_STD) {
+            fiv_conv2d_node* cn = (fiv_conv2d_node*)nd->op;
+            in_f  = (int32_t)cn->params.input_channels;
+            out_f = (int32_t)cn->params.output_channels;
         }
         fwrite(&type, 4, 1, fp);
         fwrite(&src, 4, 1, fp);
@@ -352,6 +362,20 @@ fiv_ret fiv_neural_network_save_model(char* model_name, void* nn_context)
             fiv_linear_node* ln = (fiv_linear_node*)nd->op;
             fwrite(ln->weight->data.fl, sizeof(float), (size_t)(out_f * in_f), fp);
             fwrite(ln->bias->data.fl,   sizeof(float), (size_t)out_f, fp);
+        } else if (nd->node_type == FIV_NN_NODE_CONV2D_STD) {
+            fiv_conv2d_node* cn = (fiv_conv2d_node*)nd->op;
+            int32_t kx = (int32_t)cn->params.kernel_size_x;
+            int32_t ky = (int32_t)cn->params.kernel_size_y;
+            int32_t st = (int32_t)cn->params.stride;
+            int32_t pm = (int32_t)cn->params.padding_method;
+            int32_t bs = (int32_t)cn->params.bias;
+            fwrite(&kx, 4, 1, fp);
+            fwrite(&ky, 4, 1, fp);
+            fwrite(&st, 4, 1, fp);
+            fwrite(&pm, 4, 1, fp);
+            fwrite(&bs, 4, 1, fp);
+            fwrite(cn->weight->data.fl, sizeof(float), (size_t)(out_f * in_f * 9), fp);
+            if (cn->bias) fwrite(cn->bias->data.fl, sizeof(float), (size_t)out_f, fp);
         }
     }
     fclose(fp);
@@ -392,6 +416,36 @@ void* fiv_create_neural_network_from_model(char* model_name)
                 goto fail;
             }
         } else if (type == FIV_NN_NODE_RELU || type == FIV_NN_NODE_RELU6) {
+            if (fiv_neural_network_add_node(net, (int)type, (int)src, i, NULL) != FIV_RET_OK) {
+                goto fail;
+            }
+        } else if (type == FIV_NN_NODE_CONV2D_STD) {
+            int32_t kx, ky, st, pm, bs;
+            if (fread(&kx, 4, 1, fp) != 1 || fread(&ky, 4, 1, fp) != 1 ||
+                fread(&st, 4, 1, fp) != 1 || fread(&pm, 4, 1, fp) != 1 ||
+                fread(&bs, 4, 1, fp) != 1) {
+                goto fail;
+            }
+            fiv_conv2d_params cp;
+            memset(&cp, 0, sizeof(cp));
+            cp.conv2d_method   = FIV_CONV2D_STD;
+            cp.kernel_size_x   = kx;
+            cp.kernel_size_y   = ky;
+            cp.stride          = st;
+            cp.padding_method  = pm;
+            cp.input_channels  = in_f;
+            cp.output_channels = out_f;
+            cp.bias            = bs;
+            if (fiv_neural_network_add_node(net, FIV_NN_NODE_CONV2D_STD, (int)src, i, &cp) != FIV_RET_OK) {
+                goto fail;
+            }
+            fiv_conv2d_node* cn = (fiv_conv2d_node*)net->nodes[i].op;
+            size_t nw = (size_t)(out_f * in_f * 9);
+            if (fread(cn->weight->data.fl, sizeof(float), nw, fp) != nw) goto fail;
+            if (cn->bias && fread(cn->bias->data.fl, sizeof(float), (size_t)out_f, fp) != (size_t)out_f) {
+                goto fail;
+            }
+        } else if (type == FIV_NN_NODE_FLATTEN || type == FIV_NN_NODE_MAX2D) {
             if (fiv_neural_network_add_node(net, (int)type, (int)src, i, NULL) != FIV_RET_OK) {
                 goto fail;
             }
