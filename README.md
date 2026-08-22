@@ -8,7 +8,7 @@
 
 - **张量与基础数据结构**：提供统一的张量抽象与动态数组，作为上层算法的基础数据容器，支持任意维度张量及其逐元素二元运算。
 - **矩阵运算**：涵盖矩阵转置、矩阵-向量乘法与矩阵-矩阵乘法，面向 x86 / ARM 等异构架构做针对性优化。
-- **神经网络**：提供计算图构建、前向推理与反向传播训练能力，内置线性层与激活函数等基础算子，支持模型保存与加载。
+- **神经网络**：提供计算图构建、前向推理与反向传播训练能力。算子涵盖线性层（Linear）、激活函数（ReLU / ReLU6）、二维卷积（标准 / 深度可分离 / 逐点 / 可分离，含 3×3 与 5×5 stride-2 的 SIMD 优化内核）、最大池化（Max2D）、展平（Flatten）、逐元素相加（Add）与填充（Pad）；支持模型保存与加载。卷积在 x86（AVX2）/ ARM（NEON）架构下做了针对性优化。
 
 ## English
 
@@ -18,7 +18,7 @@ FastIV is dedicated to high-performance algorithms for speech, image and compute
 
 - **Tensor & data structures**: A unified tensor abstraction and dynamic array that serve as the foundational data containers for higher-level algorithms, supporting N-dimensional tensors and element-wise binary operations.
 - **Matrix operations**: Matrix transpose, matrix-vector multiplication and matrix-matrix multiplication, with targeted optimizations for heterogeneous architectures such as x86 and ARM.
-- **Neural networks**: Computation-graph construction, forward inference and backpropagation training, with built-in basic operators such as linear layers and activation functions, plus model save/load support.
+- **Neural networks**: Computation-graph construction, forward inference and backpropagation training. Operators include linear layers (Linear), activations (ReLU / ReLU6), 2D convolutions (standard / depthwise / pointwise / separable, with SIMD-optimized 3x3 and 5x5 stride-2 kernels), max pooling (Max2D), flatten, element-wise add and pad; with model save/load support. Convolutions are optimized for x86 (AVX2) and ARM (NEON).
 
 ## Build
 
@@ -45,7 +45,10 @@ The build produces one standalone test binary per feature in `build/`:
 - `test_ctensor` — N-D tensor and binary ops
 - `test_mat_transpose`, `test_mat_vec`, `test_mat_mul` — matrix ops
 - `test_nn` — neural-network unit and integration tests (no dataset required)
-- `test_nn_mnist` — end-to-end MNIST accuracy test (skips if data is absent)
+- `test_nn_conv2d` — convolution forward/backward tests incl. numeric-gradient check (no dataset required)
+- `test_nn_mnist` — end-to-end MLP MNIST accuracy test (skips if data is absent)
+- `test_nn_mnist_conv` — end-to-end CNN MNIST test (conv→ReLU→Max2D→flatten→Linear), requires >98% accuracy (skips if data is absent)
+- `test_blazeface` — BlazeFace short-range face-detector inference (5x5 stride-2 stem conv), uses the SIMD conv kernels
 
 Each prints `PASS=n FAIL=0` on success and exits non-zero on failure.
 
