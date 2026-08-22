@@ -19,12 +19,19 @@
 extern "C" {
 #endif
 
-/* Per-node bookkeeping; node 0 is the implicit INPUT. */
+/* Per-node bookkeeping; node 0 is the implicit INPUT.
+   num_src/src_list: every single-input node has num_src == 1 and src_list
+   == NULL (its only source is input_src); a multi-input node (ADD) owns a
+   src_list of num_src ids with src_list[0] == input_src. inputs mirrors
+   src_list as the wired input tensors and is NULL for single-input nodes. */
 typedef struct {
     int   node_type;
     int   input_src;   /* source node id; -1 for node 0 */
+    int   num_src;     /* total input count (>= 1); 1 for single-input nodes */
+    int*  src_list;    /* owned; all source ids when num_src > 1, else NULL */
     void* op;          /* op struct carrying the vtable; NULL for node 0 */
-    void* input;       /* predecessor node's output (topo order) */
+    void* input;       /* predecessor node's output (topo order); inputs[0] for multi-input */
+    void** inputs;     /* owned array of num_src input tensors; NULL for single-input */
     void* output;      /* this node's output tensor; node 0 aliases caller input */
     int   owns_output; /* 1 if output is a buffer this node must release */
 } fiv_nn_node_context;
@@ -38,7 +45,18 @@ typedef struct {
     int    topo_count;
     int    topo_valid;
     int    infer_allocated;  /* 1 once inference pass1 has allocated node outputs */
+    double bench_ms[FIV_NN_NODE_TYPE_NUM];  /* per node-type forward time (ms) of the last run_inference */
 } fiv_nn_network_context;
+
+/* Enable per-node-type forward timing for the next run_inference calls on net.
+   While enabled, run_inference resets bench_ms each call and pass2 accumulates
+   the wall time of every node keyed by its node_type. Read the split with
+   fiv_nn_get_bench(). The guard is a single global flag so the normal (disabled)
+   path stays branch-free on the hot loop. */
+void fiv_nn_bench_enable(void* net);
+
+/* Copy the last run_inference's per node-type timing (ms) into out_by_type[0..n-1]. */
+void fiv_nn_get_bench(void* net, double* out_by_type, int n);
 
 /* Training forward pass: wire inputs, allocate outputs and run every node's
    forward_fn in topo order; *final_out receives the output node's tensor. */

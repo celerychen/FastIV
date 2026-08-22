@@ -24,6 +24,14 @@ typedef fiv_ret(*fiv_nn_op_backward_fn)(void* op_state, void* grad_input, const 
 typedef fiv_ret(*fiv_nn_op_inference_fn)(void* op_state, void* output, void* input);
 typedef void*  (*fiv_nn_op_alloc_out_fn)(void* op_state, const void* input, void* existing_output, fiv_ret* out_ret);
 
+/* Optional multi-input slots, NULL for every single-input op. The engine calls
+   them only when a node has more than one input source (num_src > 1); the
+   single-input *_fn slots stay NULL-free for those ops and are never invoked.
+   inputs is the array of this node's input tensors (inputs[0] == primary). */
+typedef fiv_ret(*fiv_nn_op_forward_multi_fn)(void* op_state, void* output, void* const* inputs, int num_inputs);
+typedef fiv_ret(*fiv_nn_op_backward_multi_fn)(void* op_state, void* const* grad_inputs, const void* grad_output, void* const* inputs, int num_inputs);
+typedef fiv_ret(*fiv_nn_op_inference_multi_fn)(void* op_state, void* output, void* const* inputs, int num_inputs);
+
 typedef struct fiv_nn_op_base {
     fiv_nn_op_create_fn     create_fn;
     fiv_nn_op_release_fn    release_fn;
@@ -31,6 +39,9 @@ typedef struct fiv_nn_op_base {
     fiv_nn_op_backward_fn   backward_fn;   /* training backward (accumulates into grad_input) */
     fiv_nn_op_inference_fn  inference_fn;  /* inference forward */
     fiv_nn_op_alloc_out_fn  alloc_out_fn;
+    fiv_nn_op_forward_multi_fn   forward_multi_fn;    /* NULL unless multi-input */
+    fiv_nn_op_backward_multi_fn  backward_multi_fn;   /* NULL unless multi-input */
+    fiv_nn_op_inference_multi_fn inference_multi_fn;  /* NULL unless multi-input */
 } fiv_nn_op_base;
 
 #endif  /* _FIV_NN_OP_H_ */

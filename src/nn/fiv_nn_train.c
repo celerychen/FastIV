@@ -132,10 +132,15 @@ static void fiv_nn_sgd_update(fiv_nn_network_context* net, float lr)
             ivf32* db = ln->grad_bias->data.fl;
             for (size_t k = 0; k < nb; k++) b[k] -= lr * db[k];
             memset(db, 0, ln->grad_bias->total_bytes);
-        } else if (nd->node_type == FIV_NN_NODE_CONV2D_STD) {
+        } else if (nd->node_type == FIV_NN_NODE_CONV2D_STD ||
+                   nd->node_type == FIV_NN_NODE_CONV2D_DEPTHWISE ||
+                   nd->node_type == FIV_NN_NODE_CONV2D_POINTWISE) {
             fiv_conv2d_node* cn = (fiv_conv2d_node*)nd->op;
 
-            size_t nw = (size_t)cn->params.output_channels * (size_t)cn->params.input_channels * 9;
+            int kcin = (cn->params.conv2d_method == FIV_CONV2D_DEPTHWISE) ? 1
+                                                                          : cn->params.input_channels;
+            size_t nw = (size_t)cn->params.output_channels * (size_t)kcin *
+                        (size_t)cn->params.kernel_size_y * (size_t)cn->params.kernel_size_x;
             ivf32* W = cn->weight->data.fl;
             ivf32* dW = cn->grad_weight->data.fl;
             for (size_t k = 0; k < nw; k++) W[k] -= lr * dW[k];
@@ -205,21 +210,39 @@ fiv_ret fiv_neural_network_train(void* nn_context, fiv_nn_train_params* p, fiv_l
             if (r != FIV_RET_OK) goto fail;
 
             /* backward in reverse topo order; each node accumulates its
-               input gradient onto its source node */
+               input gradient onto its source node(s) */
             for (int k = net->topo_count - 1; k >= 0; k--) {
                 int i = net->topo_order[k];
                 if (i == 0) continue;
                 fiv_nn_node_context* nd = &net->nodes[i];
                 fiv_nn_op_base* o = (fiv_nn_op_base*)nd->op;
-                if (!o || !o->backward_fn) { r = FIV_RET_ERR_DATA_UNINITED; goto fail; }
+                if (!o) { r = FIV_RET_ERR_DATA_UNINITED; goto fail; }
                 void* grad_out = grads[i];
                 if (!grad_out) continue;   /* no downstream contribution */
-                void* grad_in = NULL;
-                if (nd->input_src != 0) {
-                    grad_in = fiv_nn_grad_get(net, grads, nd->input_src);
-                    if (!grad_in) { r = FIV_RET_ERR_MEM; goto fail; }
+                if (nd->num_src > 1 && o->backward_multi_fn) {
+                    /* multi-input node (ADD): one grad buffer per source;
+                       sources that are node 0 (external input) get NULL */
+                    void** gi = (void**)fiv_malloc(sizeof(void*) * (size_t)nd->num_src);
+                    if (!gi) { r = FIV_RET_ERR_MEM; goto fail; }
+                    for (int s = 0; s < nd->num_src; s++) {
+                        int src = (s == 0) ? nd->input_src : nd->src_list[s - 1];
+                        gi[s] = NULL;
+                        if (src != 0) {
+                            gi[s] = fiv_nn_grad_get(net, grads, src);
+                            if (!gi[s]) { fiv_free(gi); r = FIV_RET_ERR_MEM; goto fail; }
+                        }
+                    }
+                    r = o->backward_multi_fn(nd->op, gi, grad_out, nd->inputs, nd->num_src);
+                    fiv_free(gi);
+                } else {
+                    if (!o->backward_fn) { r = FIV_RET_ERR_DATA_UNINITED; goto fail; }
+                    void* grad_in = NULL;
+                    if (nd->input_src != 0) {
+                        grad_in = fiv_nn_grad_get(net, grads, nd->input_src);
+                        if (!grad_in) { r = FIV_RET_ERR_MEM; goto fail; }
+                    }
+                    r = o->backward_fn(nd->op, grad_in, grad_out, nd->input);
                 }
-                r = o->backward_fn(nd->op, grad_in, grad_out, nd->input);
                 if (r != FIV_RET_OK) goto fail;
             }
 

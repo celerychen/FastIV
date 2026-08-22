@@ -17,9 +17,7 @@
 #include "fiv_common.h"
 
 void* fiv_flatten_node_create(void* params)
-{
-    (void)params;
-    fiv_flatten_node* n = (fiv_flatten_node*)fiv_malloc(sizeof(fiv_flatten_node));
+{    fiv_flatten_node* n = (fiv_flatten_node*)fiv_malloc(sizeof(fiv_flatten_node));
     if (!n) return NULL;
     memset(n, 0, sizeof(fiv_flatten_node));
     n->base.create_fn    = fiv_flatten_node_create;
@@ -75,9 +73,7 @@ static fiv_ret fiv_flatten_dims(const fiv_tensor_hdr* in, size_t* rows, size_t* 
 /* Output: 2D (rows, cols) header only; data is bound by fiv_tensor_reshape in
    forward/inference (zero-copy, shares the input buffer, reference = 0). */
 void* fiv_flatten_node_alloc_out(void* op_state, const void* input, void* existing_output, fiv_ret* out_ret)
-{
-    (void)op_state;
-    *out_ret = FIV_RET_OK;
+{    *out_ret = FIV_RET_OK;
     const fiv_tensor_hdr* in = (const fiv_tensor_hdr*)input;
     if (!in) { *out_ret = FIV_RET_ERR_PARA; return NULL; }
 
@@ -109,22 +105,16 @@ static fiv_ret fiv_flatten_compute(fiv_mat* out, const fiv_tensor_hdr* in)
 }
 
 fiv_ret fiv_flatten_node_forward(void* op_state, void* output, void* input)
-{
-    (void)op_state;
-    return fiv_flatten_compute((fiv_mat*)output, (const fiv_tensor_hdr*)input);
+{    return fiv_flatten_compute((fiv_mat*)output, (const fiv_tensor_hdr*)input);
 }
 
 fiv_ret fiv_flatten_node_inference(void* op_state, void* output, void* input)
-{
-    (void)op_state;
-    return fiv_flatten_compute((fiv_mat*)output, (const fiv_tensor_hdr*)input);
+{    return fiv_flatten_compute((fiv_mat*)output, (const fiv_tensor_hdr*)input);
 }
 
 /* Same element count both sides; accumulate grad_output into grad_input. */
 fiv_ret fiv_flatten_node_backward(void* op_state, void* grad_input, const void* grad_output, const void* input)
 {
-    (void)op_state;
-    (void)input;
     const fiv_tensor_hdr* go = (const fiv_tensor_hdr*)grad_output;
     fiv_tensor_hdr* gi = (fiv_tensor_hdr*)grad_input;
     if (!go) return FIV_RET_ERR_PARA;

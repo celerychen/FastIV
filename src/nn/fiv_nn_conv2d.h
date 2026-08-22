@@ -28,23 +28,27 @@ enum {
     FIV_CONV2D_SEPARABLE = 3,  /* reserved */
 };
 
-/* CNN-style 2D convolution, kernel 3x3, stride 1, output same spatial size.
+/* CNN-style 2D convolution, any kernel size / stride, explicit pads.
    dst/src/kernel: generic tensors (any 1D~5D tensor pointer, see fiv_tensor_hdr):
    src:    (..., C_in, H, W)
-   kernel: (C_out, C_in, 3, 3) for STD; (C_out, 1, 3, 3) for DEPTHWISE (C_out == C_in)
-   dst:    (..., C_out, H, W)
+   kernel: (C_out, C_in, kh, kw) for STD/POINTWISE; (C_out, 1, 3, 3) for DEPTHWISE (C_out == C_in)
+   dst:    (..., C_out, ceil(H/stride), ceil(W/stride))
    params: fiv_conv2d_params (conv2d_method / kernel_size / stride / padding_method /
-           input_channels / output_channels / bias); padding_method 0 = zero, 1 = replicate edge. */
+           input_channels / output_channels / bias / pad_top-bottom-left-right).
+           padding_method 0 = zero fill, 1 = replicate edge element; the pads are
+           the explicit start-pads (p0) that enter the index math (see same_pad).
+           A legacy 3x3 stride-1 call with all pads 0 keeps the historical
+           same-padding (p0 = p1 = 1) and its SIMD fast path. */
 fiv_ret fiv_tensor_conv2d(void* dst, void* src, void* kernel, fiv_conv2d_params* params);
 
-/* ---- CONV2D_STD network node (forward/backward live in fiv_nn_conv2d.c) ---- */
+/* ---- CONV network node (STD / DEPTHWISE / POINTWISE; fiv_nn_conv2d.c) ---- */
 
 /* Conv op holding its own weights (and optional per-channel bias). weight is
-   (C_out, C_in, 3, 3); fiv_nn_op_base must be the first member (see fiv_nn_op.h). */
+   (C_out, C_in, ky, kx); fiv_nn_op_base must be the first member (see fiv_nn_op.h). */
 typedef struct {
     fiv_nn_op_base     base;
     fiv_conv2d_params  params;
-    fiv_tensor4d*      weight;        /* (C_out, C_in, 3, 3) */
+    fiv_tensor4d*      weight;        /* (C_out, C_in, ky, kx) */
     fiv_vec*           bias;          /* C_out; NULL when params.bias == 0 */
     fiv_tensor4d*      grad_weight;   /* same shape as weight, engine zeroes per step */
     fiv_vec*           grad_bias;
