@@ -31,6 +31,8 @@ typedef enum {
     FIV_NN_NODE_CONV2D_SEPARABLE,
     FIV_NN_NODE_FLATTEN,
     FIV_NN_NODE_MAX2D,
+    FIV_NN_NODE_ADD,
+    FIV_NN_NODE_PAD,
     FIV_NN_NODE_TYPE_NUM
 } fiv_nn_node_type;
 
@@ -46,11 +48,21 @@ typedef struct{
    int kernel_size_x;
    int kernel_size_y;
    int stride;
-   int padding_method;  /* fill zero or fill edge element */
+   int padding_method;  /* 0 = zero fill, 1 = replicate edge element */
    int input_channels;
    int output_channels;
    int bias;  /* 0 = no bias, 1 = per-output-channel bias */
+   int pad_top;    /* explicit start padding (rows) */
+   int pad_bottom; /* explicit end padding (rows) */
+   int pad_left;   /* explicit start padding (cols) */
+   int pad_right;  /* explicit end padding (cols) */
 }fiv_conv2d_params;
+
+/* Channel-pad params: NCHW, appends zero channels at the END of the channel
+   dim so the output has exactly output_channels (output_channels >= in_c). */
+typedef struct {
+    int output_channels;
+} fiv_pad_node_params;
 
 
 
@@ -70,6 +82,14 @@ void* fiv_create_neural_network();
    index_end   - this node's own id (must equal the current node count)
    params      - op-specific params (e.g. fiv_linear_node_params); NULL for INPUT/RELU */
 fiv_ret fiv_neural_network_add_node(void* nn_context, int node_type, int index_start, int index_end, void* params);
+
+/* Add a node fed by MULTIPLE source nodes (e.g. ADD residual: main path +
+   shortcut). index_starts lists every source node id in order; index_starts[0]
+   is the primary source and is what single-input nodes would use. All other
+   add_node call sites are unchanged; only multi-input nodes (ADD) need this. */
+fiv_ret fiv_neural_network_add_node_multi(void* nn_context, int node_type,
+                                          const int* index_starts, int num_src,
+                                          int index_end, void* params);
 
 /* Run inference for one input and write the result into output.
    output     - result tensor (must match the network output shape)

@@ -19,42 +19,40 @@
 /* SIMD headers are auto-included and detected by api/fiv_data_typedefs.h
    (FIV_USE_ARM_NEON / FIV_USE_AVX2 / FIV_USE_X86_SIMD). */
 
-/* 2x2 stride-2 max pooling over the last two (H, W) dims; leading dims
+/* 2x2 stride-2 max pooling over the last two (h, w) dims; leading dims
    (batch/channels) are pooled independently. The training forward caches each
    output's argmax (flat offset inside its channel plane) so backward can route
    grad_output back to the selected element only; the inference forward needs
    no argmax bookkeeping and runs a leaner loop. */
 
-/* Shared dims extraction: (..., C, H, W) -> batch*times, channels, H, W. */
-static void fiv_max_2d_dims(const fiv_tensor_hdr* in, size_t* B, size_t* C,
-                            size_t* H, size_t* W)
+/* Shared dims extraction: (..., c, h, w) -> batch*times, channels, h, w. */
+static void fiv_max_2d_dims(const fiv_tensor_hdr* in, size_t* batch, size_t* channels,
+                            size_t* height, size_t* width)
 {
     switch (in->id) {
     case FIV_ID_TENSOR3D:
-        *B = 1;
-        *C = ((const fiv_tensor3d*)in)->channels;
-        *H = ((const fiv_tensor3d*)in)->height;
-        *W = ((const fiv_tensor3d*)in)->width;
+        *batch = 1;
+        *channels = ((const fiv_tensor3d*)in)->channels;
+        *height = ((const fiv_tensor3d*)in)->height;
+        *width = ((const fiv_tensor3d*)in)->width;
         break;
     case FIV_ID_TENSOR4D:
-        *B = ((const fiv_tensor4d*)in)->batch;
-        *C = ((const fiv_tensor4d*)in)->channels;
-        *H = ((const fiv_tensor4d*)in)->height;
-        *W = ((const fiv_tensor4d*)in)->width;
+        *batch = ((const fiv_tensor4d*)in)->batch;
+        *channels = ((const fiv_tensor4d*)in)->channels;
+        *height = ((const fiv_tensor4d*)in)->height;
+        *width = ((const fiv_tensor4d*)in)->width;
         break;
     default:
-        *B = ((const fiv_tensor5d*)in)->batch * ((const fiv_tensor5d*)in)->times;
-        *C = ((const fiv_tensor5d*)in)->channels;
-        *H = ((const fiv_tensor5d*)in)->height;
-        *W = ((const fiv_tensor5d*)in)->width;
+        *batch = ((const fiv_tensor5d*)in)->batch * ((const fiv_tensor5d*)in)->times;
+        *channels = ((const fiv_tensor5d*)in)->channels;
+        *height = ((const fiv_tensor5d*)in)->height;
+        *width = ((const fiv_tensor5d*)in)->width;
         break;
     }
 }
 
 void* fiv_max_2d_node_create(void* params)
-{
-    (void)params;
-    fiv_max_2d_node* n = (fiv_max_2d_node*)fiv_malloc(sizeof(fiv_max_2d_node));
+{    fiv_max_2d_node* n = (fiv_max_2d_node*)fiv_malloc(sizeof(fiv_max_2d_node));
     if (!n) return NULL;
     memset(n, 0, sizeof(fiv_max_2d_node));
     n->base.create_fn    = fiv_max_2d_node_create;
@@ -74,7 +72,7 @@ void fiv_max_2d_node_release(void* op_state)
     fiv_free(n);
 }
 
-/* Input: (..., C, H, W) -> output (..., C, H/2, W/2), same ndim. */
+/* Input: (..., c, h, w) -> output (..., c, h/2, w/2), same ndim. */
 void* fiv_max_2d_node_alloc_out(void* op_state, const void* input, void* existing_output, fiv_ret* out_ret)
 {
     *out_ret = FIV_RET_OK;
@@ -92,44 +90,44 @@ void* fiv_max_2d_node_alloc_out(void* op_state, const void* input, void* existin
         return NULL;
     }
 
-    size_t B = 0;
-    size_t C = 0;
-    size_t H = 0;
-    size_t W = 0;
-    fiv_max_2d_dims(in, &B, &C, &H, &W);
-    size_t OH = H / 2;
-    size_t OW = W / 2;
-    if (OH == 0 || OW == 0) {
+    size_t batch    = 0;
+    size_t channels = 0;
+    size_t height   = 0;
+    size_t width    = 0;
+    fiv_max_2d_dims(in, &batch, &channels, &height, &width);
+    size_t oh = height / 2;
+    size_t ow = width / 2;
+    if (oh == 0 || ow == 0) {
         *out_ret = FIV_RET_ERR_PARA;   /* input too small to downsample */
         return NULL;
     }
 
     fiv_tensor_hdr* out = (fiv_tensor_hdr*)existing_output;
     if (out && out->id == in->id && out->dtype == FIV_32F1 && out->data_continue == 1) {
-        size_t oB = 0;
-        size_t oC = 0;
-        size_t oH = 0;
-        size_t oW = 0;
-        fiv_max_2d_dims(out, &oB, &oC, &oH, &oW);
-        if (oB == B && oC == C && oH == OH && oW == OW) return out;
+        size_t o_b = 0;
+        size_t o_c = 0;
+        size_t o_h = 0;
+        size_t o_w = 0;
+        fiv_max_2d_dims(out, &o_b, &o_c, &o_h, &o_w);
+        if (o_b == batch && o_c == channels && o_h == oh && o_w == ow) return out;
     }
     if (out) fiv_release_tensor((void**)&out);
 
     switch (in->id) {
     case FIV_ID_TENSOR3D: {
-        size_t sh[3] = { C, OH, OW };
+        size_t sh[3] = { channels, oh, ow };
         out = (fiv_tensor_hdr*)fiv_create_tensor3d(sh, FIV_32F1);
         break;
     }
     case FIV_ID_TENSOR4D: {
         const fiv_tensor4d* t = (const fiv_tensor4d*)in;
-        size_t sh[4] = { t->batch, C, OH, OW };
+        size_t sh[4] = { t->batch, channels, oh, ow };
         out = (fiv_tensor_hdr*)fiv_create_tensor4d(sh, FIV_32F1);
         break;
     }
     default: {
         const fiv_tensor5d* t = (const fiv_tensor5d*)in;
-        size_t sh[5] = { t->batch, t->times, C, OH, OW };
+        size_t sh[5] = { t->batch, t->times, channels, oh, ow };
         out = (fiv_tensor_hdr*)fiv_create_tensor5d(sh, FIV_32F1);
         break;
     }
@@ -141,17 +139,17 @@ void* fiv_max_2d_node_alloc_out(void* op_state, const void* input, void* existin
 /* Training forward: pool and cache the argmax of every output element. */
 static fiv_ret fiv_max_2d_compute(fiv_max_2d_node* n, fiv_tensor_hdr* out, const fiv_tensor_hdr* in)
 {
-    size_t B = 0;
-    size_t C = 0;
-    size_t H = 0;
-    size_t W = 0;
-    fiv_max_2d_dims(in, &B, &C, &H, &W);
-    size_t OH = H / 2;
-    size_t OW = W / 2;
-    size_t n_chan = B * C;
-    size_t iHW = H * W;
-    size_t oHW = OH * OW;
-    size_t need = n_chan * oHW;
+    size_t batch    = 0;
+    size_t channels = 0;
+    size_t height   = 0;
+    size_t width    = 0;
+    fiv_max_2d_dims(in, &batch, &channels, &height, &width);
+    size_t oh = height / 2;
+    size_t ow = width / 2;
+    size_t n_chan = batch * channels;
+    size_t ihw = height * width;
+    size_t ohw = oh * ow;
+    size_t need = n_chan * ohw;
     if (need == 0) return FIV_RET_OK;
     if (!n->argmax || n->n_out < need) {
         int* a = (int*)fiv_realloc(n->argmax, need * sizeof(int));
@@ -160,39 +158,39 @@ static fiv_ret fiv_max_2d_compute(fiv_max_2d_node* n, fiv_tensor_hdr* out, const
         n->n_out = need;
     }
 
-    const ivf32* ip = in->data.fl;
-    ivf32* op = out->data.fl;
+    const ivf32* ip  = in->data.fl;
+    ivf32*       op  = out->data.fl;
     for (size_t ch = 0; ch < n_chan; ch++) {
-        const ivf32* src = ip + ch * iHW;
-        ivf32* dst = op + ch * oHW;
-        int* am = n->argmax + ch * oHW;
-        for (size_t oy = 0; oy < OH; oy++) {
+        const ivf32* src = ip + ch * ihw;
+        ivf32*       dst = op + ch * ohw;
+        int* am = n->argmax + ch * ohw;
+        for (size_t oy = 0; oy < oh; oy++) {
             size_t y0 = oy * 2;
-            size_t y1 = y0 + 1;   /* window never crosses the edge: 2*(OH-1)+1 <= H-1 */
-            for (size_t ox = 0; ox < OW; ox++) {
+            size_t y1 = y0 + 1;   /* window never crosses the edge: 2*(oh-1)+1 <= h-1 */
+            for (size_t ox = 0; ox < ow; ox++) {
                 size_t x0 = ox * 2;
                 size_t x1 = x0 + 1;
-                ivf32 m = src[y0 * W + x0];
-                int mo = (int)(y0 * W + x0);
+                ivf32 m = src[y0 * width + x0];
+                int mo = (int)(y0 * width + x0);
                 ivf32 v;
 
-                v = src[y0 * W + x1];
+                v = src[y0 * width + x1];
                 if (v > m) {
                     m = v;
-                    mo = (int)(y0 * W + x1);
+                    mo = (int)(y0 * width + x1);
                 }
-                v = src[y1 * W + x0];
+                v = src[y1 * width + x0];
                 if (v > m) {
                     m = v;
-                    mo = (int)(y1 * W + x0);
+                    mo = (int)(y1 * width + x0);
                 }
-                v = src[y1 * W + x1];
+                v = src[y1 * width + x1];
                 if (v > m) {
                     m = v;
-                    mo = (int)(y1 * W + x1);
+                    mo = (int)(y1 * width + x1);
                 }
-                dst[oy * OW + ox] = m;
-                am[oy * OW + ox] = mo;
+                dst[oy * ow + ox] = m;
+                am[oy * ow + ox] = mo;
             }
         }
     }
@@ -201,39 +199,39 @@ static fiv_ret fiv_max_2d_compute(fiv_max_2d_node* n, fiv_tensor_hdr* out, const
 
 /* Inference forward: same pooling, no argmax bookkeeping (no allocation, no
    position cache, no per-element store of the winning offset). The 2x2 window
-   never crosses the input edge (2*(OH-1)+1 <= H-1, 2*(OW-1)+1 <= W-1), so the
-   whole pass is branch-free: a SIMD main loop over OW plus a scalar tail. */
+   never crosses the input edge (2*(oh-1)+1 <= h-1, 2*(ow-1)+1 <= w-1), so the
+   whole pass is branch-free: a SIMD main loop over ow plus a scalar tail. */
 static fiv_ret fiv_max_2d_compute_infer(fiv_tensor_hdr* out, const fiv_tensor_hdr* in)
 {
-    size_t B = 0;
-    size_t C = 0;
-    size_t H = 0;
-    size_t W = 0;
-    fiv_max_2d_dims(in, &B, &C, &H, &W);
-    size_t OH = H / 2;
-    size_t OW = W / 2;
-    size_t n_chan = B * C;
-    size_t iHW = H * W;
-    size_t oHW = OH * OW;
-    if (oHW == 0) return FIV_RET_OK;
+    size_t batch    = 0;
+    size_t channels = 0;
+    size_t height   = 0;
+    size_t width    = 0;
+    fiv_max_2d_dims(in, &batch, &channels, &height, &width);
+    size_t oh = height / 2;
+    size_t ow = width / 2;
+    size_t n_chan = batch * channels;
+    size_t ihw = height * width;
+    size_t ohw = oh * ow;
+    if (ohw == 0) return FIV_RET_OK;
 
-    const ivf32* ip = in->data.fl;
-    ivf32* op = out->data.fl;
+    const ivf32* ip  = in->data.fl;
+    ivf32*       op  = out->data.fl;
 #if defined(FIV_USE_AVX2)
     /* cross-lane reorder so the 8 outputs of one iteration land in order */
     const int offset[8] = { 0, 1, 4, 5, 2, 3, 6, 7 };
     const __m256i t_c = _mm256_loadu_si256((const __m256i*)offset);
 #endif
     for (size_t ch = 0; ch < n_chan; ch++) {
-        const ivf32* src = ip + ch * iHW;
-        ivf32* dst = op + ch * oHW;
-        for (size_t oy = 0; oy < OH; oy++) {
-            const ivf32* r0 = src + 2 * oy * W;   /* window top row */
-            const ivf32* r1 = r0 + W;             /* window bottom row */
-            ivf32* drow = dst + oy * OW;
+        const ivf32* src = ip + ch * ihw;
+        ivf32*       dst = op + ch * ohw;
+        for (size_t oy = 0; oy < oh; oy++) {
+            const ivf32* r0 = src + 2 * oy * width;   /* window top row */
+            const ivf32* r1 = r0 + width;             /* window bottom row */
+            ivf32* drow = dst + oy * ow;
             size_t x = 0;
 #if defined(FIV_USE_ARM_NEON)
-            for (; x + 4 <= OW; x += 4) {
+            for (; x + 4 <= ow; x += 4) {
                 float32x4_t a0 = vld1q_f32(r0 + 2 * x);
                 float32x4_t a1 = vld1q_f32(r0 + 2 * x + 4);
                 float32x4_t b0 = vld1q_f32(r1 + 2 * x);
@@ -246,7 +244,7 @@ static fiv_ret fiv_max_2d_compute_infer(fiv_tensor_hdr* out, const fiv_tensor_hd
                 vst1q_f32(drow + x, uz.val[0]);
             }
 #elif defined(FIV_USE_AVX2)
-            for (; x + 8 <= OW; x += 8) {
+            for (; x + 8 <= ow; x += 8) {
                 __m256 t1 = _mm256_loadu_ps(r0 + 2 * x);
                 __m256 t2 = _mm256_loadu_ps(r0 + 2 * x + 8);
                 __m256 t3 = _mm256_loadu_ps(r1 + 2 * x);
@@ -262,7 +260,7 @@ static fiv_ret fiv_max_2d_compute_infer(fiv_tensor_hdr* out, const fiv_tensor_hd
                 _mm256_storeu_ps(drow + x, t6);
             }
 #elif defined(FIV_USE_X86_SIMD)
-            for (; x + 4 <= OW; x += 4) {
+            for (; x + 4 <= ow; x += 4) {
                 __m128 t1 = _mm_loadu_ps(r0 + 2 * x);
                 __m128 t2 = _mm_loadu_ps(r0 + 2 * x + 4);
                 __m128 t3 = _mm_loadu_ps(r1 + 2 * x);
@@ -279,7 +277,7 @@ static fiv_ret fiv_max_2d_compute_infer(fiv_tensor_hdr* out, const fiv_tensor_hd
                 _mm_storeu_ps(drow + x, t3);
             }
 #endif
-            for (; x < OW; x++) {
+            for (; x < ow; x++) {
                 ivf32 t0 = r0[2 * x];
                 ivf32 t1 = r0[2 * x + 1];
                 ivf32 t2 = r1[2 * x];
@@ -302,44 +300,34 @@ fiv_ret fiv_max_2d_node_forward(void* op_state, void* output, void* input)
 }
 
 fiv_ret fiv_max_2d_node_inference(void* op_state, void* output, void* input)
-{
-    (void)op_state;
-    return fiv_max_2d_compute_infer((fiv_tensor_hdr*)output, (const fiv_tensor_hdr*)input);
+{    return fiv_max_2d_compute_infer((fiv_tensor_hdr*)output, (const fiv_tensor_hdr*)input);
 }
 
 /* Route each grad_output element to the input element selected by forward. */
 fiv_ret fiv_max_2d_node_backward(void* op_state, void* grad_input, const void* grad_output, const void* input)
-{
-    (void)input;
-    fiv_max_2d_node* n = (fiv_max_2d_node*)op_state;
+{    fiv_max_2d_node* n = (fiv_max_2d_node*)op_state;
     const fiv_tensor_hdr* go = (const fiv_tensor_hdr*)grad_output;
     fiv_tensor_hdr* gi = (fiv_tensor_hdr*)grad_input;
     if (!n || !go) return FIV_RET_ERR_PARA;
     if (!gi) return FIV_RET_OK;   /* node-0 input: nothing to accumulate */
 
-    size_t B = 0;
-    size_t C = 0;
-    size_t OH = 0;
-    size_t OW = 0;
-    fiv_max_2d_dims(go, &B, &C, &OH, &OW);
-    size_t H = 0;
-    size_t W = 0;
-    {
-        size_t hB = 0;
-        size_t hC = 0;
-        fiv_max_2d_dims(gi, &hB, &hC, &H, &W);
-        (void)hB;
-        (void)hC;
-    }
-    size_t n_chan = B * C;
-    size_t oHW = OH * OW;
-    const ivf32* gp = go->data.fl;
-    ivf32* gip = gi->data.fl;
+    size_t batch    = 0;
+    size_t channels = 0;
+    size_t oh       = 0;
+    size_t ow       = 0;
+    fiv_max_2d_dims(go, &batch, &channels, &oh, &ow);
+    size_t height   = 0;
+    size_t width    = 0;
+    fiv_max_2d_dims(gi, &batch, &channels, &height, &width);
+    size_t n_chan = batch * channels;
+    size_t ohw = oh * ow;
+    const ivf32* gp  = go->data.fl;
+    ivf32*       gip = gi->data.fl;
     for (size_t ch = 0; ch < n_chan; ch++) {
-        const ivf32* goc = gp + ch * oHW;
-        ivf32* gic = gip + ch * (H * W);
-        const int* am = n->argmax + ch * oHW;
-        for (size_t k = 0; k < oHW; k++) gic[(size_t)am[k]] += goc[k];
+        const ivf32* goc = gp + ch * ohw;
+        ivf32* gic = gip + ch * (height * width);
+        const int* am = n->argmax + ch * ohw;
+        for (size_t k = 0; k < ohw; k++) gic[(size_t)am[k]] += goc[k];
     }
     return FIV_RET_OK;
 }

@@ -71,6 +71,43 @@ static void ref_conv(ivf32* out, const ivf32* in, size_t C_in, size_t C_out,
     }
 }
 
+/* stride-2 naive reference (independent of the SIMD kernel). pt=pl=1, st=2. */
+static void ref_conv_plane_s2(ivf32* out, const ivf32* src, size_t H, size_t W,
+                               const ivf32* coef, int zero_pad, int accumulate)
+{
+    size_t oH = (H + 1) / 2, oW = (W + 1) / 2;
+    for (size_t y = 0; y < oH; y++)
+        for (size_t x = 0; x < oW; x++) {
+            ivf32 s = 0.0f;
+            for (int ky = 0; ky < 3; ky++)
+                for (int kx = 0; kx < 3; kx++) {
+                    int sy = (int)y * 2 - 1 + ky;
+                    int sx = (int)x * 2 - 1 + kx;
+                    if (sy < 0 || sy >= (int)H || sx < 0 || sx >= (int)W) {
+                        if (zero_pad) continue;
+                        if (sy < 0) sy = 0; if (sy >= (int)H) sy = (int)H - 1;
+                        if (sx < 0) sx = 0; if (sx >= (int)W) sx = (int)W - 1;
+                    }
+                    s += src[(size_t)sy * W + (size_t)sx] * coef[(size_t)ky * 3 + (size_t)kx];
+                }
+            out[y * oW + x] = accumulate ? out[y * oW + x] + s : s;
+        }
+}
+static void ref_conv_s2(ivf32* out, const ivf32* in, size_t C_in, size_t C_out,
+                        size_t H, size_t W, const ivf32* kern, int method, int zero_pad)
+{
+    size_t iHW = H * W, oHW = ((H + 1) / 2) * ((W + 1) / 2);
+    if (method == FIV_CONV2D_STD) {
+        for (size_t oc = 0; oc < C_out; oc++)
+            for (size_t ic = 0; ic < C_in; ic++)
+                ref_conv_plane_s2(out + oc * oHW, in + ic * iHW, H, W,
+                                  kern + (oc * C_in + ic) * 9, zero_pad, ic > 0);
+    } else {
+        for (size_t c = 0; c < C_out; c++)
+            ref_conv_plane_s2(out + c * oHW, in + c * iHW, H, W, kern + c * 9, zero_pad, 0);
+    }
+}
+
 /* ---- helpers ---- */
 
 static fiv_conv2d_params mk_params(int method, int pad, int cin, int cout)
@@ -379,15 +416,15 @@ static void test_errors(void)
     {
         fiv_conv2d_params q = p;
         q.conv2d_method = FIV_CONV2D_POINTWISE;
-        CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_NOT_SUPPORT, "pointwise not implemented");
+        CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_OK, "pointwise = std 1x1");
         q = p; q.conv2d_method = FIV_CONV2D_SEPARABLE;
         CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_NOT_SUPPORT, "separable not implemented");
         q = p; q.conv2d_method = 99;
         CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_NOT_SUPPORT, "bad method value");
-        q = p; q.kernel_size_x = 5;
-        CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_NOT_SUPPORT, "kernel size != 3");
-        q = p; q.stride = 2;
-        CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_NOT_SUPPORT, "stride != 1");
+        q = p; q.kernel_size_x = 0;
+        CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_PARA, "kernel size 0 rejected");
+        q = p; q.stride = 0;
+        CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_PARA, "stride 0 rejected");
         q = p; q.padding_method = 7;
         CHECK(fiv_tensor_conv2d(out, src, k, &q) == FIV_RET_ERR_PARA, "bad padding method");
         q = p; q.input_channels = 2;
@@ -451,18 +488,39 @@ static void test_conv_node(void)
     CHECK(fiv_conv2d_node_create(NULL) == NULL, "conv node null params");
     {
         fiv_conv2d_params q = p;
-        q.conv2d_method = FIV_CONV2D_DEPTHWISE;
-        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node method rejected");
-        q = p; q.kernel_size_x = 5;
-        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node kernel size rejected");
-        q = p; q.stride = 2;
-        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node stride rejected");
+        q.conv2d_method = FIV_CONV2D_SEPARABLE;
+        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node separable rejected");
+        q = p; q.conv2d_method = FIV_CONV2D_DEPTHWISE; q.kernel_size_x = 5; q.kernel_size_y = 5;
+        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node depthwise 5x5 rejected");
+        q = p; q.conv2d_method = FIV_CONV2D_POINTWISE;
+        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node pointwise 3x3 rejected");
+        q = p; q.stride = 0;
+        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node stride 0 rejected");
+        q = p; q.pad_top = -1;
+        CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node negative pad rejected");
         q = p; q.padding_method = 7;
         CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node padding rejected");
         q = p; q.bias = 5;
         CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node bias rejected");
         q = p; q.input_channels = 0;
         CHECK(fiv_conv2d_node_create(&q) == NULL, "conv node channels rejected");
+    }
+    /* extended shapes are now legal: 5x5, stride 2, depthwise, pointwise */
+    {
+        fiv_conv2d_params q = p;
+        q.kernel_size_x = 5; q.kernel_size_y = 5; q.stride = 2;
+        void* op5 = fiv_conv2d_node_create(&q);
+        CHECK(op5 != NULL, "conv node 5x5 stride2 accepted");
+        if (op5) ((fiv_nn_op_base*)op5)->release_fn(op5);
+        q = p; q.conv2d_method = FIV_CONV2D_DEPTHWISE;
+        void* opd = fiv_conv2d_node_create(&q);
+        CHECK(opd != NULL, "conv node depthwise accepted");
+        if (opd) ((fiv_nn_op_base*)opd)->release_fn(opd);
+        q = p; q.conv2d_method = FIV_CONV2D_POINTWISE;
+        q.kernel_size_x = 1; q.kernel_size_y = 1;
+        void* opp = fiv_conv2d_node_create(&q);
+        CHECK(opp != NULL, "conv node pointwise accepted");
+        if (opp) ((fiv_nn_op_base*)opp)->release_fn(opp);
     }
 
     void* op = fiv_conv2d_node_create(&p);
@@ -703,6 +761,98 @@ static void test_max2d_infer(void)
     }
 }
 
+/* 1x1 pointwise branch: per-pixel channel mix, padding-free.
+   Hand-computed: in 2ch 2x2, w [3ch, 2ch]; out[oc][y][x] = sum_ic in[ic][y][x]*w[oc][ic]. */
+static void test_conv_pw(void)
+{
+    size_t xsh[4] = {1, 2, 2, 2};
+    fiv_tensor4d* x = fiv_create_tensor4d(xsh, FIV_32F1);
+    const ivf32 xd[8] = {1,2, 3,4,  5,6, 7,8};   /* ch0: 1 2 / 3 4 ; ch1: 5 6 / 7 8 */
+    memcpy(x->data.fl, xd, sizeof(xd));
+
+    size_t ksh[4] = {3, 2, 1, 1};
+    fiv_tensor4d* k = fiv_create_tensor4d(ksh, FIV_32F1);
+    const ivf32 kd[6] = {1, 0,   0, 1,   2, 3};  /* w[oc][ic] */
+    memcpy(k->data.fl, kd, sizeof(kd));
+
+    size_t osh[4] = {1, 3, 2, 2};
+    fiv_tensor4d* out = fiv_create_tensor4d(osh, FIV_32F1);
+
+    fiv_conv2d_params p = mk_params(FIV_CONV2D_POINTWISE, 0, 2, 3);
+    p.kernel_size_x = p.kernel_size_y = 1;
+    CHECK(fiv_tensor_conv2d(out, x, k, &p) == FIV_RET_OK, "pw conv ok");
+
+    /* expected: out0 = ch0 (w=1,0); out1 = ch1 (w=0,1); out2 = 2*ch0+3*ch1 */
+    const ivf32 want[12] = {
+        1, 2, 3, 4,          /* oc0 = x0 */
+        5, 6, 7, 8,          /* oc1 = x1 */
+        17, 22, 27, 32       /* oc2 = 2*x0 + 3*x1 */
+    };
+    CHECK(cmp_plane(out->data.fl, want, 12, "pw hand-computed"), "");
+
+    /* pad on a 1x1 conv is meaningless: a padded 1x1 must NOT hit the pw
+       branch (falls back to generic), but a zero-pad 1x1 is still exact */
+    fiv_conv2d_params q = p;
+    q.pad_top = q.pad_bottom = q.pad_left = q.pad_right = 1;
+    memset(out->data.fl, 0, out->total_bytes);
+    CHECK(fiv_tensor_conv2d(out, x, k, &q) == FIV_RET_OK, "pw padded falls back, still runs");
+    CHECK(cmp_plane(out->data.fl, want, 12, "pw pad-invariant"), "");
+
+    fiv_release_tensor((void**)&x);
+    fiv_release_tensor((void**)&k);
+    fiv_release_tensor((void**)&out);
+}
+
+/* 3x3 stride-2 branch: legacy_s2 SIMD path vs naive reference over random
+   shapes/methods/paddings (zero and edge pad both trigger legacy_s2). */
+static void test_conv_s2(void)
+{
+    unsigned seed = 0x20260822u;
+    for (int t = 0; t < 60; t++) {
+        int method = (t % 2 == 0) ? FIV_CONV2D_DEPTHWISE : FIV_CONV2D_STD;
+        size_t C     = 1 + (size_t)(t % 4);
+        size_t C_out = (method == FIV_CONV2D_DEPTHWISE) ? C : (1 + (size_t)((t / 2) % 4));
+        size_t H = 3 + (size_t)((t * 7 + 5) % 30);
+        size_t W = 3 + (size_t)((t * 11 + 3) % 30);
+        int pad = t % 2;   /* 0 = zero, 1 = edge: both trigger legacy_s2 */
+
+        size_t sh[4] = {1, C, H, W};
+        fiv_tensor4d* in = fiv_create_tensor4d(sh, FIV_32F1);
+        CHECK(in != NULL, "s2 alloc in");
+        fill_rand(in->data.fl, C * H * W, &seed);
+
+        size_t kc  = (method == FIV_CONV2D_DEPTHWISE) ? 1 : C;
+        size_t ksh[4] = {C_out, kc, 3, 3};
+        fiv_tensor4d* k = fiv_create_tensor4d(ksh, FIV_32F1);
+        fill_rand(k->data.fl, C_out * kc * 9, &seed);
+
+        size_t oH = (H + 1) / 2, oW = (W + 1) / 2;
+        size_t osh[4] = {1, C_out, oH, oW};
+        fiv_tensor4d* out = fiv_create_tensor4d(osh, FIV_32F1);
+        fiv_tensor4d* ref = fiv_create_tensor4d(osh, FIV_32F1);
+
+        fiv_conv2d_params p = mk_params(method, pad, (int)C, (int)C_out);
+        p.stride = 2;
+        p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = 1;
+        CHECK(fiv_tensor_conv2d(out, in, k, &p) == FIV_RET_OK, "s2 conv ok");
+        ref_conv_s2(ref->data.fl, in->data.fl, C, C_out, H, W, k->data.fl, method, pad == 0);
+
+        int ok = 1;
+        for (size_t i = 0; i < C_out * oH * oW; i++)
+            if (fabsf(out->data.fl[i] - ref->data.fl[i]) > 1e-3f) {
+                printf("  [FAIL] s2 t=%d idx=%zu got %.6f want %.6f (H=%zu W=%zu C=%zu Cout=%zu pad=%d) @%d\n",
+                       t, i, out->data.fl[i], ref->data.fl[i], H, W, C, C_out, pad, __LINE__);
+                ok = 0; break;
+            }
+        CHECK(ok, "s2 conv matches naive reference (3x3 stride-2 SIMD)");
+
+        fiv_release_tensor((void**)&in);
+        fiv_release_tensor((void**)&k);
+        fiv_release_tensor((void**)&out);
+        fiv_release_tensor((void**)&ref);
+    }
+}
+
 int main(void)
 {
     test_fixed();
@@ -710,6 +860,8 @@ int main(void)
     test_errors();
     test_conv_node();
     test_max2d_infer();
+    test_conv_pw();
+    test_conv_s2();
     printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

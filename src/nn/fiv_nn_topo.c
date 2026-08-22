@@ -12,6 +12,15 @@
 #include "fiv_nn_topo.h"
 #include "fiv_common.h"
 
+/* Does node j read node u as an input? (multi-input nodes scan src_list.) */
+static int fiv_nn_node_has_src(const fiv_nn_node_context* nd, int u)
+{
+    if (nd->input_src == u) return 1;
+    for (int k = 0; k < nd->num_src - 1; k++)
+        if (nd->src_list[k] == u) return 1;
+    return 0;
+}
+
 fiv_ret fiv_nn_topo_sort(fiv_nn_network_context* net)
 {
     int n = net->node_count;
@@ -19,8 +28,12 @@ fiv_ret fiv_nn_topo_sort(fiv_nn_network_context* net)
     if (!indeg) return FIV_RET_ERR_MEM;
 
     for (int i = 1; i < n; i++) {
-        int s = net->nodes[i].input_src;
-        if (s >= 0 && s < n) indeg[i]++;
+        const fiv_nn_node_context* nd = &net->nodes[i];
+        indeg[i] = nd->num_src;
+        for (int k = 0; k < nd->num_src; k++) {
+            int s = (k == 0) ? nd->input_src : nd->src_list[k - 1];
+            if (s < 0 || s >= n) return FIV_RET_ERR_PARA;
+        }
     }
 
     int* q = (int*)fiv_malloc(sizeof(int) * (size_t)n);
@@ -33,7 +46,7 @@ fiv_ret fiv_nn_topo_sort(fiv_nn_network_context* net)
         int u = q[head++];
         net->topo_order[cnt++] = u;
         for (int j = 1; j < n; j++) {
-            if (net->nodes[j].input_src == u && --indeg[j] == 0) q[tail++] = j;
+            if (fiv_nn_node_has_src(&net->nodes[j], u) && --indeg[j] == 0) q[tail++] = j;
         }
     }
     fiv_free(indeg);
