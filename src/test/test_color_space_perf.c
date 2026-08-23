@@ -130,6 +130,42 @@ int main(int argc, char** argv) {
         fiv_release_tensor((void**)&bgr);
     }
 
+    /* ---- R/B swap: scalar vs SIMD (NEON vld3/vst3) ---- */
+    {
+        fiv_mat* rgb_sw    = fiv_perf_make_rgb(height, width);
+        fiv_mat* bgr_simd  = fiv_create_tensor2d(shape, FIV_8U3);
+        fiv_mat* bgr_scalar = fiv_create_tensor2d(shape, FIV_8U3);
+        if (rgb_sw == NULL || bgr_simd == NULL || bgr_scalar == NULL) {
+            printf("FAIL: swap alloc error\n"); pass = 0; goto cleanup;
+        }
+        long long t0, t1; double us;
+        int i;
+
+        t0 = fiv_perf_now_ns();
+        for (i = 0; i < iters; i++) fiv_cs_swap_rb_scalar(bgr_scalar, rgb_sw);
+        t1 = fiv_perf_now_ns();
+        us = (double)(t1 - t0) / iters / 1000.0;
+        printf("  swap scalar: %8.2f us/iter\n", us);
+
+        t0 = fiv_perf_now_ns();
+        for (i = 0; i < iters; i++)
+            fiv_image_color_space_convertor(bgr_simd, rgb_sw, FIV_CS_RGB2BGR);
+        t1 = fiv_perf_now_ns();
+        us = (double)(t1 - t0) / iters / 1000.0;
+        printf("  swap simd  : %8.2f us/iter\n", us);
+
+        size_t n = (size_t)height * width * 3;
+        if (fiv_perf_gray_match(bgr_scalar->data.ptr8u, bgr_simd->data.ptr8u, n)) {
+            printf("  bit-exact (swap): SIMD == scalar  (PASS)\n");
+        } else {
+            printf("  bit-exact (swap): SIMD != scalar  (FAIL)\n");
+            pass = 0;
+        }
+        fiv_release_tensor((void**)&rgb_sw);
+        fiv_release_tensor((void**)&bgr_simd);
+        fiv_release_tensor((void**)&bgr_scalar);
+    }
+
 cleanup:
     if (rgb)      fiv_release_tensor((void**)&rgb);
     if (g_simd)   fiv_release_tensor((void**)&g_simd);

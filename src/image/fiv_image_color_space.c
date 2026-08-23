@@ -28,7 +28,7 @@ static fiv_ret fiv_cs_check_common(const fiv_mat* image_dst, const fiv_mat* imag
 }
 
 
-static fiv_ret fiv_cs_swap_rb(fiv_mat* image_dst, const fiv_mat* image_src) {
+fiv_ret fiv_cs_swap_rb_scalar(fiv_mat* image_dst, const fiv_mat* image_src) {
     int    height        = (int)image_src->height;
     int    width         = (int)image_src->width;
     int    src_stride    = (int)image_src->strides[0];
@@ -50,6 +50,42 @@ static fiv_ret fiv_cs_swap_rb(fiv_mat* image_dst, const fiv_mat* image_src) {
             dst_row[off + 2]   = red;
         }
     }
+    return FIV_RET_OK;
+}
+
+#if defined(FIV_USE_ARM_NEON)
+static inline void fiv_cs_swap_rb_48px_neon(iv8u* dst, const iv8u* src);
+#endif
+
+static fiv_ret fiv_cs_swap_rb(fiv_mat* image_dst, const fiv_mat* image_src) {
+    int    height        = (int)image_src->height;
+    int    width         = (int)image_src->width;
+    int    src_stride    = (int)image_src->strides[0];
+    int    dst_stride    = (int)image_dst->strides[0];
+    iv8u*  src_data      = image_src->data.ptr8u;
+    iv8u*  dst_data      = image_dst->data.ptr8u;
+    int    row_index;
+
+#if defined(FIV_USE_ARM_NEON)
+    for (row_index = 0; row_index < height; row_index++) {
+        const iv8u* src_row = src_data + (size_t)row_index * src_stride;
+        iv8u*       dst_row = dst_data + (size_t)row_index * dst_stride;
+        int         col_index = 0;
+        for (; col_index + 16 <= width; col_index += 16) {
+            fiv_cs_swap_rb_48px_neon(dst_row + col_index * 3, src_row + col_index * 3);
+        }
+        for (; col_index < width; col_index++) {
+            size_t      off  = (size_t)col_index * 3;
+            iv8u        red  = src_row[off + 0];
+            iv8u        blue = src_row[off + 2];
+            dst_row[off + 0] = blue;
+            dst_row[off + 1] = src_row[off + 1];
+            dst_row[off + 2] = red;
+        }
+    }
+#else
+    fiv_cs_swap_rb_scalar(image_dst, image_src);
+#endif
     return FIV_RET_OK;
 }
 
@@ -89,8 +125,7 @@ fiv_ret fiv_cs_to_gray_scalar(fiv_mat* image_dst, const fiv_mat* image_src,
 }
 
 
-/* x86 SIMD deinterleave + tail store adapted from komrad36/RGB2Y.h; weights
-   replaced by the exact (wr*R+wg*G+wb*B)>>8 to match the scalar core. */
+
 #if defined(FIV_USE_AVX2) || defined(FIV_USE_X86_SIMD)
 
 #define FIV_CS_BMASK _mm256_setr_epi8( \
@@ -197,6 +232,13 @@ static inline void fiv_cs_gray_48px_neon(iv8u* dst, const iv8u* src, int swap_rb
     fiv_cs_gray_16px_neon(dst + 0,  src + 0  * 3, swap_rb);
     fiv_cs_gray_16px_neon(dst + 16, src + 16 * 3, swap_rb);
     fiv_cs_gray_16px_neon(dst + 32, src + 32 * 3, swap_rb);
+}
+
+/* Swap R/B of 48 bytes (16 interleaved pixels) via vld3/vst3 channel split. */
+static inline void fiv_cs_swap_rb_48px_neon(iv8u* dst, const iv8u* src) {
+    uint8x16x3_t vec = vld3q_u8(src);
+    uint8x16x3_t out = { vec.val[2], vec.val[1], vec.val[0] };
+    vst3q_u8(dst, out);
 }
 
 #endif /* FIV_USE_ARM_NEON */

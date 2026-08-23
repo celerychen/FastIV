@@ -20,4 +20,7 @@
 fiv_ret fiv_cs_to_gray_scalar(fiv_mat* image_dst, const fiv_mat* image_src,
                               int red_index, int green_index, int blue_index);
 
+/* Scalar R/B swap baseline, exposed for the same benchmarking purpose. */
+fiv_ret fiv_cs_swap_rb_scalar(fiv_mat* image_dst, const fiv_mat* image_src);
+
 #endif  /* _FIV_IMAGE_COLOR_SPACE_H_ */
