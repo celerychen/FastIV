@@ -472,7 +472,7 @@ int main(int argc, char** argv) {
     const char* img_path = argc > 1 ? argv[1]
         : "../src/reference/c_face_detect_release/15.png";
     const char* w_path = argc > 2 ? argv[2]
-        : "../src/reference/c_face_detect_release/models/blazeface_weights.bin";
+        : "../app/face/models/blazeface_weights.bin";
     const char* dump_path = "/tmp/fiv_blazeface_gold.bin";
     const float min_score = 0.5f;
     const float TOL = 2e-3f;          /* intermediate tensors */
