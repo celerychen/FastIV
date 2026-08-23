@@ -9,7 +9,7 @@
 - **张量与基础数据结构**：提供统一的张量抽象与动态数组，作为上层算法的基础数据容器，支持任意维度张量及其逐元素二元运算。
 - **矩阵运算**：涵盖矩阵转置、矩阵-向量乘法与矩阵-矩阵乘法，面向 x86 / ARM 等异构架构做针对性优化。
 - **神经网络**：提供计算图构建、前向推理与反向传播训练能力。算子涵盖线性层（Linear）、激活函数（ReLU / ReLU6）、二维卷积（标准 / 深度可分离 / 逐点 / 可分离，含 3×3 与 5×5 stride-2 的 SIMD 优化内核）、最大池化（Max2D）、展平（Flatten）、逐元素相加（Add）与填充（Pad）；支持模型保存与加载。卷积在 x86（AVX2）/ ARM（NEON）架构下做了针对性优化。
-- **高性能人脸检测器**：基于 BlazeFace 短距模型的端到端人脸检测应用，封装于 `app/face/`，对外仅暴露 `fiv_create_face_detetor` / `fiv_face_detector_on_image` / `fiv_release_face_detector` 三个接口。内置中心方形 ROI 透视变换（定点双线性，对齐 OpenCV `INTER_LINEAR` / `BORDER_CONSTANT`，逐像素现算无需坐标查找表）、sigmoid + anchor 解码 + 加权 NMS 后处理，权重随仓库一并发布于 `app/face/models/`。在 1920×1080 输入、Apple M4（arm64, -O2）下端到端平均约 2.5 ms（best 约 2.3 ms），与参考实现逐位一致。
+- **高性能人脸检测器**：基于 BlazeFace 的端到端人脸检测应用，封装于 `app/face/`，对外仅暴露 `fiv_create_face_detetor` / `fiv_face_detector_on_image` / `fiv_release_face_detector` 三个接口，权重随仓库发布于 `app/face/models/`。
 
 ## English
 
@@ -20,7 +20,7 @@ FastIV is dedicated to high-performance algorithms for speech, image and compute
 - **Tensor & data structures**: A unified tensor abstraction and dynamic array that serve as the foundational data containers for higher-level algorithms, supporting N-dimensional tensors and element-wise binary operations.
 - **Matrix operations**: Matrix transpose, matrix-vector multiplication and matrix-matrix multiplication, with targeted optimizations for heterogeneous architectures such as x86 and ARM.
 - **Neural networks**: Computation-graph construction, forward inference and backpropagation training. Operators include linear layers (Linear), activations (ReLU / ReLU6), 2D convolutions (standard / depthwise / pointwise / separable, with SIMD-optimized 3x3 and 5x5 stride-2 kernels), max pooling (Max2D), flatten, element-wise add and pad; with model save/load support. Convolutions are optimized for x86 (AVX2) and ARM (NEON).
-- **High-performance face detector**: An end-to-end BlazeFace short-range face detector in `app/face/`, exposing only three public APIs — `fiv_create_face_detetor` / `fiv_face_detector_on_image` / `fiv_release_face_detector`. It embeds a centered-square ROI perspective warp (fixed-point bilinear, matching OpenCV `INTER_LINEAR` / `BORDER_CONSTANT`, computed inline per-pixel with no coordinate lookup table), plus sigmoid + anchor decode + weighted NMS post-processing; the weights ship with the repo under `app/face/models/`. On a 1920×1080 input with Apple M4 (arm64, -O2) the end-to-end latency averages ~2.5 ms (best ~2.3 ms) and matches the reference implementation bit-for-bit.
+- **High-performance face detector**: An end-to-end BlazeFace-based face detector in `app/face/`, exposing only three public APIs — `fiv_create_face_detetor` / `fiv_face_detector_on_image` / `fiv_release_face_detector`, with weights shipped in the repo under `app/face/models/`.
 
 ## Build
 
