@@ -11,6 +11,7 @@
 
 #include "fiv_mat_mul.h"
 #include "fiv_common.h"
+#include "fiv_mat_mul_db.h"
 
 #include <string.h>   /* memset */
 #include <stdio.h>    /* printf (kept verbatim from the verified kernels) */
@@ -1698,6 +1699,10 @@ fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
     if (dst == NULL || A == NULL || B == NULL) return FIV_RET_ERR_PARA;
     if (dst->data.ptr == NULL || A->data.ptr == NULL || B->data.ptr == NULL) return FIV_RET_ERR_PARA;
     if (dst->data_continue == 0 || A->data_continue == 0 || B->data_continue == 0) return FIV_RET_ERR_PARA;
+    /* dtype dispatch: 64F defers to the double-precision backend; the float32
+       path below then re-checks that A/B/dst are all FIV_32F1. */
+    if (A->dtype == FIV_64F1)
+        return fiv_matrix_mul_real64(dst, A, B, a_transpose, b_transpose, alpha, beta);
     if (A->dtype != FIV_32F1 || B->dtype != FIV_32F1 || dst->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
     /* alpha/beta must be fp32 scalars (FIV_32F1); any other type is unsupported */
     if (alpha.id != FIV_ID_SCALAR || alpha.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;

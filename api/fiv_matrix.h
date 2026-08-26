@@ -19,68 +19,27 @@ extern "C" {
 #endif
 
 
-/* ============================== Matrix ops ============================== */
-
-/* Transpose src (rows x cols) into dst (cols x rows). dst must already hold a
-   buffer of >= rows*cols*element_bytes. Both tensors must be contiguous
-   (data_continue == 1), share the same 4-byte dtype (32U/32S/32F families) and
-   hold data; other dtypes return FIV_RET_ERR_NOT_SUPPORT, any mismatch returns
-   FIV_RET_ERR_PARA. In-place (dst aliasing src) is NOT supported and returns
-   FIV_RET_ERR_PARA. On success dst's metadata is rewritten to describe the
-   transposed matrix. */
+/* Transpose src (m x n) into dst (n x m). Both must be contiguous, share the
+   same dtype and hold data; in-place is not supported. */
 fiv_ret fiv_matrix_transpose(fiv_mat* dst, const fiv_mat* src);
 
-/* Compute dst = mat * vec (transpose == 0) or dst = mat^T * vec (transpose != 0).
-   mat is a rows x cols matrix. Non-transposed: vec holds cols entries, result
-   dst holds rows entries. Transposed: vec holds rows entries, result dst holds
-   cols entries. All tensors must be contiguous (data_continue == 1), hold data
-   and share float32 dtype (32F); other dtypes return FIV_RET_ERR_NOT_SUPPORT,
-   any mismatch returns FIV_RET_ERR_PARA. dst must be a 1D tensor (fiv_vec) with
-   a buffer large enough for the result. In-place (dst aliasing vec) is NOT
-   supported and returns FIV_RET_ERR_PARA. */
+/* dst = mat * vec (transpose==0) or mat^T * vec (transpose!=0). All operands
+   share a float dtype (FIV_32F1 or FIV_64F1) and must be contiguous; in-place
+   (dst aliasing vec) is not supported. */
 fiv_ret fiv_matrix_mul_vec(fiv_vec* dst, const fiv_mat* mat, const fiv_vec* vec, int transpose);
 
-/* General matrix multiply: dst = alpha * op(A) * op(B) + beta * dst, where
-   op(X) is X itself when the transpose flag is 0 and X^T otherwise. A is stored
-   as rows_a x cols_a, B as rows_b x cols_b (both contiguous float32, holding
-   data). The inner dims must match: a_transpose ? rows_a : cols_a must equal
-   b_transpose ? cols_b : rows_b. Result dims: M = a_transpose ? cols_a : rows_a,
-   N = b_transpose ? rows_b : cols_b. dst must be a contiguous float32 matrix
-   of shape M x N whose buffer holds >= M*N*4 bytes; in-place (dst aliasing A or
-   B) is NOT supported and returns FIV_RET_ERR_PARA. Non-32F dtypes return
-   FIV_RET_ERR_NOT_SUPPORT, any shape/dtype mismatch returns FIV_RET_ERR_PARA.
-   On success dst's metadata is rewritten to describe the M x N result. */
-/* alpha and beta are fp32 scaling factors carried as fiv_scalar (FIV_32F1); a
-   non-fp32 scalar is rejected with FIV_RET_ERR_NOT_SUPPORT. */
+/* dst = alpha * op(A) * op(B) + beta * dst. Inner dims of op(A)/op(B) must
+   match; A/B/dst share a float dtype (FIV_32F1 or FIV_64F1); in-place (dst
+   aliasing A or B) is not supported. */
 fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
                        int a_transpose, int b_transpose, fiv_scalar alpha, fiv_scalar beta);
 
-/* Add a vector to a matrix with broadcasting along one axis.
-   dim == 0 (row direction): the vector is added to every row; vec->length must
-     equal src->cols and out[i, j] = src[i, j] + vec[j].
-   dim == 1 (column direction): the vector is added to every column; vec->length
-     must equal src->rows and out[i, j] = src[i, j] + vec[i].
-   A length mismatch with the addressed row/column returns FIV_RET_ERR_PARA, as
-   does dim != 0 && dim != 1. All tensors must be contiguous float32 holding
-   data; other dtypes return FIV_RET_ERR_NOT_SUPPORT. dst may alias src
-   (in-place). */
+/* Broadcast-add vec to each row (dim==0) or column (dim==1) of src.
+   src/vec/dst share a float dtype (FIV_32F1 or FIV_64F1); dst may alias src. */
 fiv_ret fiv_matrix_add_vec(fiv_mat* dst, const fiv_mat* src, const fiv_vec* vec, int dim);
 
-/* Reduce a matrix to a vector or a scalar by summing along one axis (float32
-   only), with accumulation: dst = beta * dst + sum(src along dim).
-   dim == 0 (row direction): sum over rows; dst is a vector of length src->cols
-     and dst[j] = beta*dst[j] + sum_i src[i, j].
-   dim == 1 (column direction): sum over columns; dst is a vector of length
-     src->rows and dst[i] = beta*dst[i] + sum_j src[i, j].
-   dim == -1: sum every element into a single scalar; dst is a fiv_scalar and
-     dst = beta*dst + sum_{i,j} src[i, j].
-   Pass beta == 0 to overwrite (no accumulation). dst must be a contiguous
-   float32 1D tensor (length 1 for dim == -1, held as a fiv_scalar) whose length
-   matches the axis being reduced; a length mismatch or dim not in {-1,0,1}
-   returns FIV_RET_ERR_PARA. src must be a contiguous float32 matrix; other
-   dtypes return FIV_RET_ERR_NOT_SUPPORT. */
-/* beta is an fp32 scaling factor carried as fiv_scalar (FIV_32F1); a non-fp32
-   scalar is rejected with FIV_RET_ERR_NOT_SUPPORT. */
+/* dst = beta * dst + sum(src along dim), dim in {-1,0,1} (-1 sums all).
+   src/dst/beta share a float dtype (FIV_32F1 or FIV_64F1). */
 fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim, fiv_scalar beta);
 
 

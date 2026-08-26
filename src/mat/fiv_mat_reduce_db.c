@@ -9,59 +9,59 @@
  * See LICENSE file in project root for full license text.
  */
 
-#include <string.h>
-#include "fiv_matrix.h"
-#include "fiv_common.h"
-#include "fiv_mat_reduce_db.h"
+/* 64-bit (ivf64 / double) backend for fiv_matrix_reduce_sum. Mirrors the
+   float32 path in fiv_mat_reduce.c: dst = beta*dst + sum(src along dim), scalar
+   accumulation, no SIMD. */
 
-/* Reduce a matrix to a vector or a scalar by summing along one axis.
+#include "fiv_mat_reduce_db.h"
+#include "fiv_common.h"
+
+/* Reduce a matrix to a vector or a scalar by summing along one axis (ivf64).
    dst = beta * dst + sum(src along dim):
    dim == 0: sum over rows -> dst[j] = beta*dst[j] + sum_i src[i, j]  (dst: vector, length == cols)
    dim == 1: sum over cols -> dst[i] = beta*dst[i] + sum_j src[i, j]  (dst: vector, length == rows)
    dim == -1: total sum -> dst = beta*dst + sum_{i,j} src[i, j]       (dst: scalar) */
-fiv_ret fiv_matrix_reduce_sum(void* dst, fiv_mat* src, int dim, fiv_scalar beta)
+fiv_ret fiv_matrix_reduce_sum_real64(void* dst, const fiv_mat* src, int dim, fiv_scalar beta)
 {
     if (!dst || !src) return FIV_RET_ERR_PARA;
     if (beta.id != FIV_ID_SCALAR) return FIV_RET_ERR_PARA;
-    if (src->dtype == FIV_64F1)
-        return fiv_matrix_reduce_sum_real64(dst, src, dim, beta);
-    if (beta.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
-    ivf32 b = beta.data.value_fp32;
-    if (src->id != FIV_ID_TENSOR2D || src->dtype != FIV_32F1 || src->data_continue == 0)
+    if (beta.dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
+    ivf64 b = beta.data.value_fp64;
+    if (src->id != FIV_ID_TENSOR2D || src->dtype != FIV_64F1 || src->data_continue == 0)
         return FIV_RET_ERR_PARA;
 
     size_t rows = src->rows;
     size_t cols = src->cols;
-    const ivf32* s = src->data.fl;
+    const ivf64* s = src->data.db;
 
     if (dim == 0 || dim == 1) {
         fiv_vec* out = (fiv_vec*)dst;
-        if (out->id != FIV_ID_TENSOR1D || out->dtype != FIV_32F1 || out->data_continue == 0)
+        if (out->id != FIV_ID_TENSOR1D || out->dtype != FIV_64F1 || out->data_continue == 0)
             return FIV_RET_ERR_PARA;
-        ivf32* d = out->data.fl;
+        ivf64* d = out->data.db;
         if (dim == 0) {
             if (out->length != cols) return FIV_RET_ERR_PARA;
             for (size_t j = 0; j < cols; j++) {
-                float acc = 0.0f;
+                double acc = 0.0;
                 for (size_t i = 0; i < rows; i++) acc += s[i * cols + j];
                 d[j] = b * d[j] + acc;
             }
         } else {
             if (out->length != rows) return FIV_RET_ERR_PARA;
             for (size_t i = 0; i < rows; i++) {
-                float acc = 0.0f;
+                double acc = 0.0;
                 for (size_t j = 0; j < cols; j++) acc += s[i * cols + j];
                 d[i] = b * d[i] + acc;
             }
         }
     } else if (dim == -1) {
         fiv_scalar* out = (fiv_scalar*)dst;
-        if (out->id != FIV_ID_SCALAR || out->dtype != FIV_32F1)
+        if (out->id != FIV_ID_SCALAR || out->dtype != FIV_64F1)
             return FIV_RET_ERR_PARA;
-        float acc = 0.0f;
+        double acc = 0.0;
         size_t n = rows * cols;
         for (size_t k = 0; k < n; k++) acc += s[k];
-        out->data.value_fp32 = b * out->data.value_fp32 + acc;
+        out->data.value_fp64 = b * out->data.value_fp64 + acc;
     } else {
         return FIV_RET_ERR_PARA;
     }

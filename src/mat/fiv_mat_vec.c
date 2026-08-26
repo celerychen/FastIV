@@ -10,6 +10,7 @@
  */
 
 #include "fiv_mat_vec.h"
+#include "fiv_mat_vec_db.h"
 #include <string.h>   /* memset for the transposed mat*vec path */
 
 /* ==================== Scalar implementation (4-way unrolled) ==================== */
@@ -392,6 +393,8 @@ fiv_ret fiv_matrix_mul_vec(fiv_vec* dst, const fiv_mat* mat, const fiv_vec* vec,
     if (dst->data.ptr == NULL || mat->data.ptr == NULL || vec->data.ptr == NULL) return FIV_RET_ERR_PARA;
     if (dst->data.ptr == vec->data.ptr) return FIV_RET_ERR_PARA;   /* in-place not supported */
     if (dst->data_continue == 0 || mat->data_continue == 0 || vec->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (mat->dtype == FIV_64F1)
+        return fiv_matrix_mul_vec_real64(dst, mat, vec, transpose);
     if (mat->dtype != FIV_32F1 || vec->dtype != FIV_32F1 || dst->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
 
     const size_t rows = mat->shapes[0];   /* mat rows */
@@ -442,6 +445,8 @@ fiv_ret fiv_matrix_add_vec(fiv_mat* dst, const fiv_mat* src, const fiv_vec* vec,
 {
     if (dst == NULL || src == NULL || vec == NULL) return FIV_RET_ERR_PARA;
     if (dst->data.ptr == NULL || src->data.ptr == NULL || vec->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (src->dtype == FIV_64F1)
+        return fiv_matrix_add_vec_real64(dst, src, vec, dim);
     if (dst->dtype != FIV_32F1 || src->dtype != FIV_32F1 || vec->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
     if (dst->data_continue == 0 || src->data_continue == 0 || vec->data_continue == 0) return FIV_RET_ERR_PARA;
     if (dst->rows != src->rows || dst->cols != src->cols) return FIV_RET_ERR_PARA;
