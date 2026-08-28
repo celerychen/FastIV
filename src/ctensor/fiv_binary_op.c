@@ -416,3 +416,25 @@ void fiv_div_ivf32(ivf32* restrict c, const ivf32* restrict a, const ivf32* rest
 }
 #endif /* __aarch64__ */
 #endif /* float32 NEON */
+
+/* float64 scalar binary ops: portable scalar loops (mirrors the float32 scalar
+   fallback; float64 SIMD was not provided upstream, so kept scalar). */
+void fiv_add_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n)
+{
+    for (size_t i = 0; i < n; i++) c[i] = a[i] + b[i];
+}
+
+void fiv_sub_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n)
+{
+    for (size_t i = 0; i < n; i++) c[i] = a[i] - b[i];
+}
+
+void fiv_mul_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n)
+{
+    for (size_t i = 0; i < n; i++) c[i] = a[i] * b[i];
+}
+
+void fiv_div_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n)
+{
+    for (size_t i = 0; i < n; i++) c[i] = a[i] / b[i];
+}

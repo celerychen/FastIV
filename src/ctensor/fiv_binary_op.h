@@ -30,6 +30,12 @@ void fiv_sub_ivf32(ivf32* restrict c, const ivf32* restrict a, const ivf32* rest
 void fiv_mul_ivf32(ivf32* restrict c, const ivf32* restrict a, const ivf32* restrict b, size_t n);
 void fiv_div_ivf32(ivf32* restrict c, const ivf32* restrict a, const ivf32* restrict b, size_t n);
 
+/* float64 scalar binary ops */
+void fiv_add_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n);
+void fiv_sub_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n);
+void fiv_mul_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n);
+void fiv_div_ivf64(ivf64* restrict c, const ivf64* restrict a, const ivf64* restrict b, size_t n);
+
 #ifdef __cplusplus
 }
 #endif

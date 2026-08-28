@@ -14,6 +14,7 @@
 #include "fiv_common.h"
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 
 void* fiv_malloc(size_t size)
@@ -48,6 +49,22 @@ void fiv_free(void *p)
         }
 
     }
+}
+
+/* Returns the current monotonic time in milliseconds (double, sub-ms precision).
+   Subtract two readings to time a span, e.g. (t1 - t0) gives elapsed ms. */
+ivf64 fiv_get_current_system_time(void)
+{
+#if defined(_WIN32)
+    LARGE_INTEGER freq, cnt;
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&cnt);
+    return (ivf64)cnt.QuadPart / (ivf64)freq.QuadPart * 1e3;
+#else
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (ivf64)ts.tv_sec * 1e3 + (ivf64)ts.tv_nsec * 1e-6;
+#endif
 }
 
 

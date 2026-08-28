@@ -22,7 +22,7 @@ extern "C" {
 
 /* ============================ Tensor IDs ============================ */
 /* C23 fixed underlying type: id is stored as a single byte, not an int */
-typedef enum : iv8u {
+typedef FIV_ENUM(iv8u) {
     FIV_ID_START  = 0,
     FIV_ID_TENSOR1D,
     FIV_ID_TENSOR2D,
@@ -163,9 +163,14 @@ typedef struct {
 #define FIV_DECLAR_SCALAR_FP32(name)   fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_32F1, .data = {0} }
 #define FIV_DECLAR_SCALAR_FP64(name)   fiv_scalar name = { .id = FIV_ID_SCALAR, .dtype = FIV_64F1, .data = {0} }
 
-/* Build an fp32 scalar literal (compound literal) for passing as an alpha/beta
-   coefficient to the matrix ops: FIV_SCALAR_FP32(1.0f). */
-#define FIV_SCALAR_FP32(v) ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_32F1, .data = { .value_fp32 = (v) } })
+/* Scalar compound-literal constructors for passing as alpha/beta coefficients or
+   scalar operands: FIV_SCALAR_FP32(1.0f), FIV_SCALAR_INT32(3), etc. */
+#define FIV_SCALAR_INT32(v)  ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_32S1, .data = { .value_int32 = (v) } })
+#define FIV_SCALAR_UINT32(v) ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_32U1, .data = { .value_uint32 = (v) } })
+#define FIV_SCALAR_INT64(v)  ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_64S1, .data = { .value_int64 = (v) } })
+#define FIV_SCALAR_UINT64(v) ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_64U1, .data = { .value_uint64 = (v) } })
+#define FIV_SCALAR_FP32(v)   ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_32F1, .data = { .value_fp32 = (v) } })
+#define FIV_SCALAR_FP64(v)   ((fiv_scalar){ .id = FIV_ID_SCALAR, .dtype = FIV_64F1, .data = { .value_fp64 = (v) } })
 
 
 /* ============================== Aliases ============================== */

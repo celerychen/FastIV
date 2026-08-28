@@ -105,6 +105,21 @@ typedef enum : iv32u{
 fiv_ret fiv_tensor_data_convert(void* image_dst, void* image_src, fiv_data_convertor_type type);
 
 
+typedef FIV_ENUM(iv32u){
+   FIV_GAUSSION_BLUR,
+}fiv_image_filter_type;
+
+typedef struct{
+   ivf32 sigma;
+}fiv_gaussion_blur_params;
+
+fiv_ret fiv_image_filter(fiv_mat* dst, fiv_mat* src, fiv_image_filter_type filter_type, void* filter_params);
+
+/* Precision-aligned 8U Gaussian blur (16-bit intermediate, single round).
+ * See fiv_image_gaussion_blur.h for details. */
+fiv_ret fiv_image_gaussian_blur_precise(fiv_mat* dst, fiv_mat* src, ivf32 sigma, int size);
+
+
 
 
 #ifdef __cplusplus

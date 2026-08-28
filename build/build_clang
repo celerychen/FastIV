@@ -1,0 +1,12 @@
+#!/bin/sh
+# build_clang - build all FastIV correctness tests with Clang (macOS / Linux).
+# Clang counterpart of build_gcc.bat (GCC/Windows) and build_msvc.bat (MSVC/Windows).
+#
+# The actual compile/link rules live in build/Makefile; this script is a thin
+# driver so the three toolchains share one invocation convention:
+#   ./build_clang               build everything
+#   ./build_clang clean         full rebuild
+#   ./build_clang test_mat_lu   build a single target
+set -e
+cd "$(dirname "$0")"
+make "$@"

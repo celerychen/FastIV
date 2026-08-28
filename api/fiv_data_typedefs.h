@@ -26,6 +26,23 @@ typedef signed   long long iv64s;
 typedef float  ivf32;
 typedef double ivf64;
 
+// ===================== Enum Underlying-Type Macro (cross-compiler) =====================
+/* C23 lets you pin an enum's underlying type with `enum : T { ... }`. GCC and
+   Clang support it; MSVC's C compiler (_MSC_VER, /std:c11 or /std:c17) does NOT
+   and rejects the colon syntax. Route through FIV_ENUM(T) so the same source
+   compiles everywhere:
+     - GCC/Clang : expands to `enum : T`  (C23 fixed underlying type preserved)
+     - MSVC (CL) : expands to `enum`      (plain enum, values in int range;
+                   the underlying storage widens from iv8u/iv32u to int, which
+                   only changes struct packing size on the MSVC build path)
+   Usage:  typedef FIV_ENUM(iv8u) { ... } fiv_my_enum; */
+#if defined(_MSC_VER)
+    #define FIV_ENUM(T) enum
+#else
+    #define FIV_ENUM(T) enum : T
+#endif
+
+
 // ===================== 16-bit Floating-Point Types =====================
 
 // --- IEEE 754 half-precision (FP16) ---
@@ -205,7 +222,7 @@ typedef iv16u   ivbf16;   // Fallback: store as uint16
 
 
 
-typedef enum : iv32u {
+typedef FIV_ENUM(iv32u) {
     FIV_RET_OK,
     FIV_RET_ERR_PARA,
     FIV_RET_ERR_MEM,
@@ -216,6 +233,8 @@ typedef enum : iv32u {
     FIV_RET_ERR_END_OF_FILE = 0x40,
     FIV_RET_ERR_DATA_WAITING = 0x80,
     FIV_RET_ERR_DATA_NOT_ENOUGH = 0x100,
+    FIV_RET_ERR_NOT_POS_DEF = 0x108,
+    FIV_RET_ERR_SINGULAR = 0x110,
     FIV_RET_DATA_ALREADY_EXISTS = 0x101,
     FIV_RET_DATA_NOT_FOUND = 0x102,
     FIV_RET_THREAD_LOCK_FAIL = 0x104
@@ -224,7 +243,7 @@ typedef enum : iv32u {
 
 
 
-typedef enum :iv8u {
+typedef FIV_ENUM(iv8u) {
     FIV_8U1 = 0,
     FIV_8S1,
     FIV_16U1,
