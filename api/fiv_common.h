@@ -43,7 +43,7 @@ extern "C" {
     void  fiv_free(void *p);
     void* fiv_realloc(void* p, size_t size);
 
-
+    ivf64 fiv_get_current_system_time();
 
 
 

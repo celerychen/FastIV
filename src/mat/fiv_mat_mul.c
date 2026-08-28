@@ -1623,8 +1623,10 @@ static void blocked_mat_mul_row_major_real32(
 
 
 /* Blocked GEMM entry (real32). a_t/b_t: 1 means the operand is used
-   transposed. m/n/k are the effective dims of op(A)/op(B)/op(C). */
-static void fiv_matrix_mul_real32(
+   transposed. m/n/k are the effective dims of op(A)/op(B)/op(C).
+   Non-static on purpose: the blocked factorization drivers (fiv_mat_cholesky.c,
+   fiv_mat_lu.c) call it directly on sub-block anchors. */
+void fiv_matrix_mul_real32(
     int a_t, int b_t, int m, int n, int k,
     ivf32 alpha,
     ivf32* a, int lda,
@@ -1693,70 +1695,70 @@ static void fiv_matrix_mul_real32(
    to the blocked path.
    ========================================================================== */
 
-fiv_ret fiv_matrix_mul(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
+fiv_ret fiv_matrix_mul(fiv_mat* mat_c, const fiv_mat* mat_a, const fiv_mat* mat_b,
                        int a_transpose, int b_transpose, fiv_scalar alpha, fiv_scalar beta)
 {
-    if (dst == NULL || A == NULL || B == NULL) return FIV_RET_ERR_PARA;
-    if (dst->data.ptr == NULL || A->data.ptr == NULL || B->data.ptr == NULL) return FIV_RET_ERR_PARA;
-    if (dst->data_continue == 0 || A->data_continue == 0 || B->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (mat_c == NULL || mat_a == NULL || mat_b == NULL) return FIV_RET_ERR_PARA;
+    if (mat_c->data.ptr == NULL || mat_a->data.ptr == NULL || mat_b->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (mat_c->data_continue == 0 || mat_a->data_continue == 0 || mat_b->data_continue == 0) return FIV_RET_ERR_PARA;
     /* dtype dispatch: 64F defers to the double-precision backend; the float32
-       path below then re-checks that A/B/dst are all FIV_32F1. */
-    if (A->dtype == FIV_64F1)
-        return fiv_matrix_mul_real64(dst, A, B, a_transpose, b_transpose, alpha, beta);
-    if (A->dtype != FIV_32F1 || B->dtype != FIV_32F1 || dst->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
+       path below then re-checks that all three operands are FIV_32F1. */
+    if (mat_a->dtype == FIV_64F1)
+        return fiv_matrix_mul_real64(mat_c, mat_a, mat_b, a_transpose, b_transpose, alpha, beta);
+    if (mat_a->dtype != FIV_32F1 || mat_b->dtype != FIV_32F1 || mat_c->dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
     /* alpha/beta must be fp32 scalars (FIV_32F1); any other type is unsupported */
     if (alpha.id != FIV_ID_SCALAR || alpha.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
     if (beta.id != FIV_ID_SCALAR || beta.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
     ivf32 alpha_f = alpha.data.value_fp32;
     ivf32 beta_f  = beta.data.value_fp32;
-    /* in-place (dst aliasing A or B) is not supported */
-    if (dst->data.ptr == A->data.ptr || dst->data.ptr == B->data.ptr) return FIV_RET_ERR_PARA;
+    /* in-place (mat_c aliasing mat_a or mat_b) is not supported */
+    if (mat_c->data.ptr == mat_a->data.ptr || mat_c->data.ptr == mat_b->data.ptr) return FIV_RET_ERR_PARA;
 
-    const int ra = (int)A->shapes[0];
-    const int ca = (int)A->shapes[1];
-    const int rb = (int)B->shapes[0];
-    const int cb = (int)B->shapes[1];
-    if (ra <= 0 || ca <= 0 || rb <= 0 || cb <= 0) return FIV_RET_ERR_PARA;
+    const int rows_a = (int)mat_a->shapes[0];
+    const int cols_a = (int)mat_a->shapes[1];
+    const int rows_b = (int)mat_b->shapes[0];
+    const int cols_b = (int)mat_b->shapes[1];
+    if (rows_a <= 0 || cols_a <= 0 || rows_b <= 0 || cols_b <= 0) return FIV_RET_ERR_PARA;
 
-    const int M = a_transpose ? ca : ra;
-    const int N = b_transpose ? rb : cb;
-    const int K = a_transpose ? ra : ca;   /* cols of op(A) */
-    const int Kb = b_transpose ? cb : rb;  /* rows of op(B) */
-    if (K != Kb) return FIV_RET_ERR_PARA;
+    const int dim_m  = a_transpose ? cols_a : rows_a;
+    const int dim_n  = b_transpose ? rows_b : cols_b;
+    const int dim_k  = a_transpose ? rows_a : cols_a;   /* cols of op(mat_a) */
+    const int dim_kb = b_transpose ? cols_b : rows_b;   /* rows of op(mat_b) */
+    if (dim_k != dim_kb) return FIV_RET_ERR_PARA;
 
-    if ((int)dst->shapes[0] != M || (int)dst->shapes[1] != N) return FIV_RET_ERR_PARA;
-    if (dst->total_bytes < (size_t)M * (size_t)N * (size_t)dst->element_bytes) return FIV_RET_ERR_PARA;
+    if ((int)mat_c->shapes[0] != dim_m || (int)mat_c->shapes[1] != dim_n) return FIV_RET_ERR_PARA;
+    if (mat_c->total_bytes < (size_t)dim_m * (size_t)dim_n * (size_t)mat_c->element_bytes) return FIV_RET_ERR_PARA;
 
-    ivf32* a = (ivf32*)A->data.ptr;
-    ivf32* b = (ivf32*)B->data.ptr;
-    ivf32* c = (ivf32*)dst->data.ptr;
+    ivf32* data_a = (ivf32*)mat_a->data.ptr;
+    ivf32* data_b = (ivf32*)mat_b->data.ptr;
+    ivf32* data_c = (ivf32*)mat_c->data.ptr;
 
     /* alpha/beta are passed straight through to the kernels, no scratch buffer:
        every variant handles all beta values itself (see the small A*B^T beta
        handling and the blocked remainder-tile accumulation). */
-    const size_t ws_bytes = ((size_t)ra * (size_t)ca + (size_t)rb * (size_t)cb +
-                             (size_t)M * (size_t)N) * (size_t)A->element_bytes;
+    const size_t ws_bytes = ((size_t)rows_a * (size_t)cols_a + (size_t)rows_b * (size_t)cols_b +
+                             (size_t)dim_m * (size_t)dim_n) * (size_t)mat_a->element_bytes;
 
     if (ws_bytes <= FIV_MAT_MUL_L3_LIMIT_BYTES) {
         /* small (non-blocked) path */
         if (!a_transpose && !b_transpose)
-            fiv_small_matrix_mul_matrix_real32(a, ra, ca, ca, b, cb, cb, c, N, alpha_f, beta_f);
+            fiv_small_matrix_mul_matrix_real32(data_a, rows_a, cols_a, cols_a, data_b, cols_b, cols_b, data_c, dim_n, alpha_f, beta_f);
         else if (!a_transpose && b_transpose)
-            fiv_small_matrix_mul_matrix_t_real32(a, ra, ca, ca, b, rb, cb, c, N, alpha_f, beta_f);
+            fiv_small_matrix_mul_matrix_t_real32(data_a, rows_a, cols_a, cols_a, data_b, rows_b, cols_b, data_c, dim_n, alpha_f, beta_f);
         else if (a_transpose && !b_transpose)
-            fiv_small_matrix_t_mul_matrix_real32(a, ra, ca, ca, b, cb, cb, c, N, alpha_f, beta_f);
+            fiv_small_matrix_t_mul_matrix_real32(data_a, rows_a, cols_a, cols_a, data_b, cols_b, cols_b, data_c, dim_n, alpha_f, beta_f);
         else
-            fiv_small_matrix_t_mul_matrix_t_real32(a, ra, ca, ca, b, rb, cb, c, N, alpha_f, beta_f);
+            fiv_small_matrix_t_mul_matrix_t_real32(data_a, rows_a, cols_a, cols_a, data_b, rows_b, cols_b, data_c, dim_n, alpha_f, beta_f);
     } else {
         /* large (blocked) path */
-        fiv_matrix_mul_real32(a_transpose, b_transpose, M, N, K, alpha_f, a, ca, b, cb, beta_f, c, N);
+        fiv_matrix_mul_real32(a_transpose, b_transpose, dim_m, dim_n, dim_k, alpha_f, data_a, cols_a, data_b, cols_b, beta_f, data_c, dim_n);
     }
 
-    dst->shapes[0]   = (size_t)M;
-    dst->shapes[1]   = (size_t)N;
-    dst->strides[0]  = (size_t)N * (size_t)dst->element_bytes;
-    dst->strides[1]  = (size_t)dst->element_bytes;
-    dst->total_bytes = (size_t)M * (size_t)N * (size_t)dst->element_bytes;
-    dst->data_continue = 1;
+    mat_c->shapes[0]   = (size_t)dim_m;
+    mat_c->shapes[1]   = (size_t)dim_n;
+    mat_c->strides[0]  = (size_t)dim_n * (size_t)mat_c->element_bytes;
+    mat_c->strides[1]  = (size_t)mat_c->element_bytes;
+    mat_c->total_bytes = (size_t)dim_m * (size_t)dim_n * (size_t)mat_c->element_bytes;
+    mat_c->data_continue = 1;
     return FIV_RET_OK;
 }

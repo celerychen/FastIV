@@ -26,6 +26,15 @@ extern "C" {
 #define FIV_MAT_MUL_L3_LIMIT_BYTES (8u * 1024u * 1024u)
 #endif
 
+/* Blocked GEMM engine (real32). a_t/b_t: 1 means the operand is used
+   transposed. m/n/k are the effective dims of op(A)/op(B)/op(C). Non-static on
+   purpose: the blocked factorization drivers (fiv_mat_cholesky.c,
+   fiv_mat_lu.c) call it directly on sub-block anchors. */
+void fiv_matrix_mul_real32(int a_t, int b_t, int m, int n, int k,
+                           ivf32 alpha, ivf32* a, int lda,
+                           ivf32* b, int ldb, ivf32 beta,
+                           ivf32* c, int ldc);
+
 #ifdef __cplusplus
 }
 #endif

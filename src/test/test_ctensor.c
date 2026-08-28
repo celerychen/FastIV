@@ -26,7 +26,8 @@ static int g_pass = 0;
         if (!(c)) { printf("  [FAIL] %s @%d\n", (msg), __LINE__); g_fail++; }   \
         else       { g_pass++; }                                                \
     } while (0)
-static float fabsf_local(float x) { return x < 0 ? -x : x; }
+static float fabsf_local(float x) { return x < (float)0 ? -x : x; }
+static double fabs_local(double x) { return x < 0.0 ? -x : x; }
 
 /* ----------------------------- create / metadata / release ----------------------------- */
 static void test_create_2d(void) {
@@ -272,6 +273,42 @@ static void test_binop_int(void) {
     fiv_release_tensor1d(&a); fiv_release_tensor1d(&b); fiv_release_tensor1d(&c);
 }
 
+/* ----------------------------- binary ops: float64 ----------------------------- */
+static void test_binop_double(void) {
+    fiv_tensor1d* a = fiv_create_tensor1d(4, FIV_64F1);
+    fiv_tensor1d* b = fiv_create_tensor1d(4, FIV_64F1);
+    fiv_tensor1d* c = fiv_create_tensor1d(4, FIV_64F1);
+    double av[4] = { 1.5, 2.5, 3.5, 4.5 }, bv[4] = { 2.0, 4.0, 6.0, 8.0 };
+    for (int i = 0; i < 4; i++) { a->data.db[i] = av[i]; b->data.db[i] = bv[i]; }
+
+    CHECK(fiv_tensor_add(c, a, b) == FIV_RET_OK, "double add");
+    { double e[4] = { 3.5, 6.5, 9.5, 12.5 }; int ok = 1;
+      for (int i = 0; i < 4; i++) if (c->data.db[i] != e[i]) ok = 0;
+      CHECK(ok, "double add values"); }
+
+    CHECK(fiv_tensor_sub(c, a, b) == FIV_RET_OK, "double sub");
+    { double e[4] = { -0.5, -1.5, -2.5, -3.5 }; int ok = 1;
+      for (int i = 0; i < 4; i++) if (c->data.db[i] != e[i]) ok = 0;
+      CHECK(ok, "double sub values"); }
+
+    CHECK(fiv_tensor_mul(c, a, b) == FIV_RET_OK, "double mul");
+    { double e[4] = { 3.0, 10.0, 21.0, 36.0 }; int ok = 1;
+      for (int i = 0; i < 4; i++) if (c->data.db[i] != e[i]) ok = 0;
+      CHECK(ok, "double mul values"); }
+
+    CHECK(fiv_tensor_div(c, a, b) == FIV_RET_OK, "double div");
+    { double e[4] = { 0.75, 0.625, 0.5833333333333333, 0.5625 }; int ok = 1;
+      for (int i = 0; i < 4; i++) if (fabs_local(c->data.db[i] - e[i]) > 1e-12) ok = 0;
+      CHECK(ok, "double div values"); }
+
+    /* in-place: c = a + a (a becomes doubled) */
+    fiv_tensor_add(a, a, a);
+    { int ok = 1; for (int i = 0; i < 4; i++) if (a->data.db[i] != av[i] * 2) ok = 0;
+      CHECK(ok, "double in-place add"); }
+
+    fiv_release_tensor1d(&a); fiv_release_tensor1d(&b); fiv_release_tensor1d(&c);
+}
+
 /* ----------------------------- binary ops: error paths ----------------------------- */
 static void test_binop_errors(void) {
     /* dtype mismatch */
@@ -319,6 +356,7 @@ int main(void) {
     test_header_copy();
     test_binop_float();
     test_binop_int();
+    test_binop_double();
     test_binop_errors();
     printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

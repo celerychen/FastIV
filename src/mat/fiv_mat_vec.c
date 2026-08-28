@@ -12,6 +12,8 @@
 #include "fiv_mat_vec.h"
 #include "fiv_mat_vec_db.h"
 #include <string.h>   /* memset for the transposed mat*vec path */
+#include <math.h>     /* sqrt / sqrtf for L2 norm */
+#include <stdint.h>   /* uint32_t / uint64_t for bit-twiddle abs */
 
 /* ==================== Scalar implementation (4-way unrolled) ==================== */
 #if !defined(FIV_USE_AVX2) && !defined(FIV_USE_ARM_NEON)
@@ -477,5 +479,314 @@ fiv_ret fiv_matrix_add_vec(fiv_mat* dst, const fiv_mat* src, const fiv_vec* vec,
     } else {
         return FIV_RET_ERR_PARA;
     }
+    return FIV_RET_OK;
+}
+
+
+/* ==================== Vector norm (L1 / L2) ==================== */
+
+/* |x| via sign-bit clear: no branch, valid for normal/subnormal/0/NaN */
+static inline ivf32 _fiv_abs_f32(ivf32 x)
+{
+    union { ivf32 f; uint32_t u; } p;
+    p.f = x;
+    p.u &= 0x7fffffffU;
+    return p.f;
+}
+
+static inline ivf64 _fiv_abs_f64(ivf64 x)
+{
+    union { ivf64 f; uint64_t u; } p;
+    p.f = x;
+    p.u &= 0x7fffffffffffffffULL;
+    return p.f;
+}
+
+/* L1 norm (sum of absolute values) for ivf32 */
+static ivf32 _fiv_vec_norm_l1_real32(const ivf32* data, size_t element_count)
+{
+    ivf32 acc = 0.0f;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        acc += _fiv_abs_f32(data[idx]);
+    }
+    return acc;
+}
+
+/* L2 norm (two-pass, max_abs scaling for overflow safety) for ivf32 */
+static ivf32 _fiv_vec_norm_l2_real32(const ivf32* data, size_t element_count)
+{
+    ivf32 max_abs = 0.0f;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        ivf32 a = _fiv_abs_f32(data[idx]);
+        if (a > max_abs) max_abs = a;
+    }
+    if (max_abs == 0.0f) return 0.0f;
+
+    ivf32 sum_sq = 0.0f;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        ivf32 scaled = data[idx] / max_abs;
+        sum_sq += scaled * scaled;
+    }
+    return max_abs * sqrtf(sum_sq);
+}
+
+/* L1 norm (sum of absolute values) for ivf64 */
+static ivf64 _fiv_vec_norm_l1_real64(const ivf64* data, size_t element_count)
+{
+    ivf64 acc = 0.0;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        acc += _fiv_abs_f64(data[idx]);
+    }
+    return acc;
+}
+
+/* L2 norm (two-pass, max_abs scaling for overflow safety) for ivf64 */
+static ivf64 _fiv_vec_norm_l2_real64(const ivf64* data, size_t element_count)
+{
+    ivf64 max_abs = 0.0;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        ivf64 a = _fiv_abs_f64(data[idx]);
+        if (a > max_abs) max_abs = a;
+    }
+    if (max_abs == 0.0) return 0.0;
+
+    ivf64 sum_sq = 0.0;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        ivf64 scaled = data[idx] / max_abs;
+        sum_sq += scaled * scaled;
+    }
+    return max_abs * sqrt(sum_sq);
+}
+
+/* Infinity norm (max absolute value) for ivf32 */
+static ivf32 _fiv_vec_norm_inf_real32(const ivf32* data, size_t element_count)
+{
+    ivf32 max_abs = 0.0f;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        ivf32 a = _fiv_abs_f32(data[idx]);
+        if (a > max_abs) max_abs = a;
+    }
+    return max_abs;
+}
+
+/* Infinity norm (max absolute value) for ivf64 */
+static ivf64 _fiv_vec_norm_inf_real64(const ivf64* data, size_t element_count)
+{
+    ivf64 max_abs = 0.0;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        ivf64 a = _fiv_abs_f64(data[idx]);
+        if (a > max_abs) max_abs = a;
+    }
+    return max_abs;
+}
+
+fiv_ret fiv_vec_norm(fiv_scalar* norm_value, fiv_vec* vec, fiv_norm_type norm_type)
+{
+    if (norm_value == NULL || vec == NULL) return FIV_RET_ERR_PARA;
+    if (vec->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (vec->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (norm_type != FIV_L1_NORM && norm_type != FIV_L2_NORM && norm_type != FIV_INF_NORM)
+        return FIV_RET_ERR_NOT_SUPPORT;
+
+    size_t element_count = vec->shapes[0];
+
+    if (vec->dtype == FIV_64F1)
+    {
+        const ivf64* data = (const ivf64*)vec->data.db;
+        ivf64 result = (norm_type == FIV_L1_NORM) ? _fiv_vec_norm_l1_real64(data, element_count)
+                     : (norm_type == FIV_L2_NORM) ? _fiv_vec_norm_l2_real64(data, element_count)
+                                                  : _fiv_vec_norm_inf_real64(data, element_count);
+        norm_value->id            = FIV_ID_SCALAR;
+        norm_value->dtype         = FIV_64F1;
+        norm_value->data.value_fp64 = result;
+        return FIV_RET_OK;
+    }
+    if (vec->dtype == FIV_32F1)
+    {
+        const ivf32* data = (const ivf32*)vec->data.fl;
+        ivf32 result = (norm_type == FIV_L1_NORM) ? _fiv_vec_norm_l1_real32(data, element_count)
+                     : (norm_type == FIV_L2_NORM) ? _fiv_vec_norm_l2_real32(data, element_count)
+                                                  : _fiv_vec_norm_inf_real32(data, element_count);
+        norm_value->id            = FIV_ID_SCALAR;
+        norm_value->dtype         = FIV_32F1;
+        norm_value->data.value_fp32 = result;
+        return FIV_RET_OK;
+    }
+    return FIV_RET_ERR_NOT_SUPPORT;
+}
+
+
+/* ==================== Vector axpy: y = a * x + y ==================== */
+
+/* ivf32 backend: y += a*x, in-place (y aliases x) allowed. */
+static void _fiv_vec_axpy_real32(ivf32* y, ivf32 a, const ivf32* x, size_t element_count)
+{
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        y[idx] = a * x[idx] + y[idx];
+    }
+}
+
+/* ivf64 backend: y += a*x, in-place (y aliases x) allowed. */
+static void _fiv_vec_axpy_real64(ivf64* y, ivf64 a, const ivf64* x, size_t element_count)
+{
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        y[idx] = a * x[idx] + y[idx];
+    }
+}
+
+fiv_ret fiv_vec_axpy(fiv_vec* y, fiv_scalar a, fiv_vec* x)
+{
+    if (y == NULL || x == NULL) return FIV_RET_ERR_PARA;
+    if (y->data.ptr == NULL || x->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (y->data_continue == 0 || x->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (y->dtype != x->dtype) return FIV_RET_ERR_PARA;
+    if (y->dtype != FIV_32F1 && y->dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
+    if (y->shapes[0] != x->shapes[0]) return FIV_RET_ERR_PARA;
+
+    size_t element_count = y->shapes[0];
+
+    if (y->dtype == FIV_64F1)
+    {
+        _fiv_vec_axpy_real64((ivf64*)y->data.db, a.data.value_fp64, (const ivf64*)x->data.db, element_count);
+        return FIV_RET_OK;
+    }
+    _fiv_vec_axpy_real32((ivf32*)y->data.fl, a.data.value_fp32, (const ivf32*)x->data.fl, element_count);
+    return FIV_RET_OK;
+}
+
+
+/* ==================== Vector dot product: sum_i a[i] * b[i] ==================== */
+
+#if !defined(FIV_USE_ARM_NEON)
+/* ivf32 backend (scalar): C baseline for non-NEON builds. */
+static ivf32 _fiv_vec_dot_real32_scalar(const ivf32* a, const ivf32* b, size_t element_count)
+{
+    ivf32 acc = 0.0f;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        acc += a[idx] * b[idx];
+    }
+    return acc;
+}
+#endif
+
+#if defined(FIV_USE_ARM_NEON)
+/* ivf32 backend (NEON): 8x float32x4_t accumulators (32 floats / iteration)
+   with load-ahead software pipelining, mirroring dot_avx_sp's scheme. */
+static ivf32 _fiv_vec_dot_real32_neon(const ivf32* a, const ivf32* b, size_t n)
+{
+    if (n == 0) return 0.0f;
+
+    float32x4_t a0 = vdupq_n_f32(0.0f), a1 = vdupq_n_f32(0.0f),
+                a2 = vdupq_n_f32(0.0f), a3 = vdupq_n_f32(0.0f),
+                a4 = vdupq_n_f32(0.0f), a5 = vdupq_n_f32(0.0f),
+                a6 = vdupq_n_f32(0.0f), a7 = vdupq_n_f32(0.0f);
+
+    size_t i = 0;
+    size_t nb = n / 32;
+
+    if (nb >= 1)
+    {
+        float32x4_t x0 = vld1q_f32(a +  0), y0 = vld1q_f32(b +  0);
+        float32x4_t x1 = vld1q_f32(a +  4), y1 = vld1q_f32(b +  4);
+        float32x4_t x2 = vld1q_f32(a +  8), y2 = vld1q_f32(b +  8);
+        float32x4_t x3 = vld1q_f32(a + 12), y3 = vld1q_f32(b + 12);
+        float32x4_t x4 = vld1q_f32(a + 16), y4 = vld1q_f32(b + 16);
+        float32x4_t x5 = vld1q_f32(a + 20), y5 = vld1q_f32(b + 20);
+        float32x4_t x6 = vld1q_f32(a + 24), y6 = vld1q_f32(b + 24);
+        float32x4_t x7 = vld1q_f32(a + 28), y7 = vld1q_f32(b + 28);
+
+        for (size_t k = 1; k < nb; k++)
+        {
+            const float* pa = a + k * 32;
+            const float* pb = b + k * 32;
+            a0 = vfmaq_f32(a0, x0, y0);
+            a1 = vfmaq_f32(a1, x1, y1);
+            a2 = vfmaq_f32(a2, x2, y2);
+            a3 = vfmaq_f32(a3, x3, y3);
+            a4 = vfmaq_f32(a4, x4, y4);
+            a5 = vfmaq_f32(a5, x5, y5);
+            a6 = vfmaq_f32(a6, x6, y6);
+            a7 = vfmaq_f32(a7, x7, y7);
+            x0 = vld1q_f32(pa +  0); y0 = vld1q_f32(pb +  0);
+            x1 = vld1q_f32(pa +  4); y1 = vld1q_f32(pb +  4);
+            x2 = vld1q_f32(pa +  8); y2 = vld1q_f32(pb +  8);
+            x3 = vld1q_f32(pa + 12); y3 = vld1q_f32(pb + 12);
+            x4 = vld1q_f32(pa + 16); y4 = vld1q_f32(pb + 16);
+            x5 = vld1q_f32(pa + 20); y5 = vld1q_f32(pb + 20);
+            x6 = vld1q_f32(pa + 24); y6 = vld1q_f32(pb + 24);
+            x7 = vld1q_f32(pa + 28); y7 = vld1q_f32(pb + 28);
+        }
+
+        a0 = vfmaq_f32(a0, x0, y0);
+        a1 = vfmaq_f32(a1, x1, y1);
+        a2 = vfmaq_f32(a2, x2, y2);
+        a3 = vfmaq_f32(a3, x3, y3);
+        a4 = vfmaq_f32(a4, x4, y4);
+        a5 = vfmaq_f32(a5, x5, y5);
+        a6 = vfmaq_f32(a6, x6, y6);
+        a7 = vfmaq_f32(a7, x7, y7);
+        i = nb * 32;
+    }
+
+    float32x4_t sum4 = vaddq_f32(vaddq_f32(a0, a1), vaddq_f32(a2, a3));
+    float32x4_t sum4b = vaddq_f32(vaddq_f32(a4, a5), vaddq_f32(a6, a7));
+    float32x4_t acc = vaddq_f32(sum4, sum4b);
+
+    for (; i + 4 <= n; i += 4)
+        acc = vfmaq_f32(acc, vld1q_f32(a + i), vld1q_f32(b + i));
+
+    float s = vaddvq_f32(acc);
+    for (; i < n; i++) s += a[i] * b[i];
+    return s;
+}
+#endif /* FIV_USE_ARM_NEON */
+
+/* ivf64 backend: scalar accumulation. */
+static ivf64 _fiv_vec_dot_real64(const ivf64* a, const ivf64* b, size_t element_count)
+{
+    ivf64 acc = 0.0;
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        acc += a[idx] * b[idx];
+    }
+    return acc;
+}
+
+fiv_ret fiv_vec_dot(fiv_scalar* dot_value, const fiv_vec* a, const fiv_vec* b)
+{
+    if (dot_value == NULL || a == NULL || b == NULL) return FIV_RET_ERR_PARA;
+    if (a->data.ptr == NULL || b->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (a->data_continue == 0 || b->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (a->dtype != b->dtype) return FIV_RET_ERR_PARA;
+    if (a->dtype != FIV_32F1 && a->dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
+    if (a->shapes[0] != b->shapes[0]) return FIV_RET_ERR_PARA;
+
+    size_t element_count = a->shapes[0];
+
+    if (a->dtype == FIV_64F1)
+    {
+        dot_value->id    = FIV_ID_SCALAR;
+        dot_value->dtype = FIV_64F1;
+        dot_value->data.value_fp64 = _fiv_vec_dot_real64((const ivf64*)a->data.db, (const ivf64*)b->data.db, element_count);
+        return FIV_RET_OK;
+    }
+    dot_value->id    = FIV_ID_SCALAR;
+    dot_value->dtype = FIV_32F1;
+#if defined(FIV_USE_ARM_NEON)
+    dot_value->data.value_fp32 = _fiv_vec_dot_real32_neon((const ivf32*)a->data.fl, (const ivf32*)b->data.fl, element_count);
+#else
+    dot_value->data.value_fp32 = _fiv_vec_dot_real32_scalar((const ivf32*)a->data.fl, (const ivf32*)b->data.fl, element_count);
+#endif
     return FIV_RET_OK;
 }

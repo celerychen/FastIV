@@ -1146,7 +1146,7 @@ void* fiv_create_tensor_like_tensor(void* tensor)
 
 // ---------------------------------------------------------------------------
 // Element-wise binary ops: c = a <op> b, per scalar component.
-// Only float32 (32F family) and signed int32 (32S family) dtypes are supported;
+// float32 (32F), float64 (64F) and signed int32 (32S) dtypes are supported;
 // anything else returns FIV_RET_ERR_NOT_SUPPORT. a, b and c must share the same
 // dtype, the same dimension, and the same total element count (same shape; there
 // is NO broadcasting), and each must be contiguous (data_continue == 1) and hold
@@ -1194,9 +1194,10 @@ static fiv_ret fiv_tensor_binary_op(void* c, const void* a, const void* b, fiv_b
     if ((int)a0->dtype < FIV_8U1 || (int)a0->dtype > FIV_16BF16) return FIV_RET_ERR_PARA;
     /* dtype groups are 16 values wide; slot 5 = signed int32 (32S), slot 8 = float32 (32F) */
     int    slot = (int)a0->dtype % 16;
-    size_t n    = (size_t)(c0->total_bytes / 4);   /* 4 bytes per scalar (float32 / int32) */
+    size_t n;
 
     if (slot == 8) {            /* float32 (32F family) */
+        n = a0->total_bytes / 4;
         switch (op) {
         case FIV_BINOP_ADD: fiv_add_ivf32(c0->data.fl, a0->data.fl, b0->data.fl, n); break;
         case FIV_BINOP_SUB: fiv_sub_ivf32(c0->data.fl, a0->data.fl, b0->data.fl, n); break;
@@ -1204,14 +1205,23 @@ static fiv_ret fiv_tensor_binary_op(void* c, const void* a, const void* b, fiv_b
         case FIV_BINOP_DIV: fiv_div_ivf32(c0->data.fl, a0->data.fl, b0->data.fl, n); break;
         }
     } else if (slot == 5) {     /* signed int32 (32S family) */
+        n = a0->total_bytes / 4;
         switch (op) {
         case FIV_BINOP_ADD: fiv_add_iv32s(c0->data.ptr32s, a0->data.ptr32s, b0->data.ptr32s, n); break;
         case FIV_BINOP_SUB: fiv_sub_iv32s(c0->data.ptr32s, a0->data.ptr32s, b0->data.ptr32s, n); break;
         case FIV_BINOP_MUL: fiv_mul_iv32s(c0->data.ptr32s, a0->data.ptr32s, b0->data.ptr32s, n); break;
         case FIV_BINOP_DIV: fiv_div_iv32s(c0->data.ptr32s, a0->data.ptr32s, b0->data.ptr32s, n); break;
         }
+    } else if (slot == 9) {     /* float64 (64F family) */
+        n = a0->total_bytes / 8;
+        switch (op) {
+        case FIV_BINOP_ADD: fiv_add_ivf64(c0->data.db, a0->data.db, b0->data.db, n); break;
+        case FIV_BINOP_SUB: fiv_sub_ivf64(c0->data.db, a0->data.db, b0->data.db, n); break;
+        case FIV_BINOP_MUL: fiv_mul_ivf64(c0->data.db, a0->data.db, b0->data.db, n); break;
+        case FIV_BINOP_DIV: fiv_div_ivf64(c0->data.db, a0->data.db, b0->data.db, n); break;
+        }
     } else {
-        return FIV_RET_ERR_NOT_SUPPORT;   /* only float32 / int32 supported */
+        return FIV_RET_ERR_NOT_SUPPORT;   /* only int32 / float32 / float64 supported */
     }
     return FIV_RET_OK;
 }
