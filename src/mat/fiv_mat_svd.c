@@ -707,20 +707,22 @@ fiv_ret fiv_matrix_svd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat
         return FIV_RET_ERR_PARA;
     }
 
-    /* work matrix: tall in place, wide transposed into scratch */
+    /* work matrix: always a private copy so mat_a is preserved in every shape.
+       Tall/square copies A verbatim; wide copies A^T (work_rows x work_cols,
+       ld = work_cols). work never aliases mat_a. */
     const int work_rows = rows > cols ? rows : cols;
     const int work_cols = dim;
     const int work_ld = work_cols;
-    ivf32* work = NULL;
+    ivf32* work = (ivf32*)fiv_malloc(sizeof(ivf32) * (size_t)rows * cols);
+    if (work == NULL) return FIV_RET_ERR_MEM;
     if (rows >= cols) {
-        work = (ivf32*)mat_a->data.ptr;            /* destroyed (packed) */
+        memcpy(work, (const void*)mat_a->data.ptr,
+               (size_t)rows * cols * sizeof(ivf32));
     } else {
-        work = (ivf32*)fiv_malloc(sizeof(ivf32) * (size_t)rows * cols);
-        if (work == NULL) return FIV_RET_ERR_MEM;
         for (int r = 0; r < rows; r++) {
             const ivf32* src_row = (const ivf32*)mat_a->data.ptr + (size_t)r * cols;
             for (int c = 0; c < cols; c++) {
-                work[(size_t)c * rows + r] = src_row[c];
+                work[(size_t)c * work_ld + r] = src_row[c];
             }
         }
     }
@@ -739,7 +741,7 @@ fiv_ret fiv_matrix_svd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat
         fiv_free(ymat);
         fiv_free(xmat);
         fiv_free(scratch_fl);
-        if (work != (ivf32*)mat_a->data.ptr) fiv_free(work);
+        fiv_free(work);
         return FIV_RET_ERR_MEM;
     }
     ivf32* diag = scratch_fl;
@@ -788,6 +790,6 @@ fiv_ret fiv_matrix_svd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat
     fiv_free(ymat);
     fiv_free(xmat);
     fiv_free(scratch_fl);
-    if (work != (ivf32*)mat_a->data.ptr) fiv_free(work);
+    fiv_free(work);
     return (qr_st == 0) ? FIV_RET_OK : FIV_RET_ERR_UNKNOWN;
 }
