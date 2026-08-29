@@ -195,7 +195,8 @@ static void run_case(int mrows, int ncols, int rank_def, int with_vecs, int do_t
     }
     const double fro_scale = fro_a > 0.0 ? sqrt(fro_a) : 1.0;
 
-    /* the SVD destroys A: keep a double copy for the checks */
+    /* keep a copy of A used by the residual checks; the SVD contract (option B)
+       preserves the input, so mat_a must remain unchanged across the call */
     double* a_saved = (double*)malloc(sizeof(double) * (size_t)mrows * ncols);
     for (int idx = 0; idx < mrows * ncols; idx++) {
         a_saved[idx] = (double)mat_a->data.fl[idx];
@@ -210,6 +211,16 @@ static void run_case(int mrows, int ncols, int rank_def, int with_vecs, int do_t
     clock_t time1 = clock();
     CHECK(ret == FIV_RET_OK, name);
     if (ret != FIV_RET_OK) goto out_free;
+
+    /* contract (option B): the input matrix must be preserved, never destroyed */
+    {
+        double worst = 0.0;
+        for (int idx = 0; idx < mrows * ncols; idx++) {
+            const double diff = fabs((double)mat_a->data.fl[idx] - a_saved[idx]);
+            if (diff > worst) worst = diff;
+        }
+        CHECK(worst < 1e-6, "input matrix preserved (not destroyed)");
+    }
 
     if (do_timing) {
         printf("  [perf] %s: %.3fs\n", name, (double)(time1 - time0) / CLOCKS_PER_SEC);
