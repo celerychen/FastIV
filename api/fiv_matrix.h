@@ -58,7 +58,7 @@ fiv_ret fiv_matrix_lu(fiv_mat* mat_a, int* piv);
    scratch. UNKNOWN if the QL iteration fails to converge. */
 fiv_ret fiv_matrix_eig_sym(fiv_mat* mat_a, ivf32* evals, fiv_mat* mat_evec, int upper);
 
-/* In-place thin SVD of a contiguous float32 matrix A_io (destroyed):
+/* Thin SVD of a contiguous float32 matrix A (input is preserved):
    A = U * diag(sing_vals) * V^T with sing_vals[k] descending, k =
    min(rows,cols). Optional mat_u (rows x k) / mat_v (cols x k) receive the
    singular vectors in their columns; NULL computes values only. UNKNOWN if
@@ -79,6 +79,13 @@ fiv_ret fiv_vec_norm(fiv_scalar* norm_value, fiv_vec* vec,  fiv_norm_type  norm_
 /* y = a * x + y (axpy). x/y equal length, float dtype, contiguous;
    y may alias x. */
 fiv_ret fiv_vec_axpy(fiv_vec* y, fiv_scalar a, fiv_vec* x);
+
+
+/*
+  y = x * scale 
+*/
+
+fiv_ret fiv_vec_scale(fiv_vec* y, fiv_vec* x, fiv_scalar scale);
 
 /* dot = sum_i a[i] * b[i]. a/b equal length, float dtype, contiguous;
    result scalar inherits the dtype. */

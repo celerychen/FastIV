@@ -30,7 +30,7 @@
 
 - **临时缓冲已是 block 尺寸**：`xmat = work_rows × MAX_BLOCK`、`ymat = work_cols × MAX_BLOCK`（compact-WY，block 维 ≤48）；`diag / superdiag / vec_v / vec_w / vec_p / vec_w2` 是长度 dim/big 的小向量。
 - **`work`（被约化的矩阵本体）必须全程保持 full 尺寸**：打包的 Householder 反射器就存在其中，bidiag → QR 迭代 → 重建 U/V 全程依赖它，不能缩成小块。分块只是 panel-by-panel 消元，矩阵本体一直在。
-- **契约（已定，方案 B）**：`fiv_matrix_svd` 现在**始终分配独立 `work` 并拷贝**（tall/square 原样拷贝、wide 转置拷贝），`work` 不再别名 `mat_a`，**输入 `mat_a` 在所有形状下均不被改动**。测试已加 `input matrix preserved` 断言锁定该契约。
+- **契约（已定，方案 B）**：`fiv_matrix_svd` 现在**始终分配独立 `work` 并拷贝**（tall/square 用 `memcpy` 原样拷贝、wide 经 `fiv_matrix_transpose` 转置拷贝），`work` 不再别名 `mat_a`，**输入 `mat_a` 在所有形状下均不被改动**。测试已加 `input matrix preserved` 断言锁定该契约。
 - 代价：tall/square 也比原来多付一次 `O(mn)` 拷贝（相对 `O(mn²)` 的 SVD 可忽略），峰值内存为 `mat_a` + `work` 两份 full 矩阵。
 - 备选（未采用）：方案 A 统一 destructive（wide 原地转置别名，删 718 malloc，零额外 full 分配但 tall/wide 都破坏输入）。当初讨论结论——wide 下「零额外 full 分配」与「保留输入」不能兼得。
 
