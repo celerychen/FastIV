@@ -34,7 +34,7 @@ extern "C" {
    a_transpose / b_transpose. A, B and dst must be contiguous FIV_64F1 tensors;
    alpha and beta are fiv_scalar of dtype FIV_64F1. In-place aliasing of dst
    with A or B is not supported. */
-fiv_ret fiv_matrix_mul_real64(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
+fiv_ret fiv_matrix_mul_real64(fiv_mat* dst, const fiv_mat* mat_a, const fiv_mat* mat_b,
                               int a_transpose, int b_transpose, fiv_scalar alpha, fiv_scalar beta);
 
 #ifdef __cplusplus

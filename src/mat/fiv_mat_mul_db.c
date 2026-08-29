@@ -1288,7 +1288,17 @@ static void mat_mul_kernel_row_major_db(
             } else {
                 ivf64 blocked_c[FIV_MAX_KERNEL_SIZE_DB];
                 kernel(kc, alpha, ptr_a, ptr_b_j, 0.0, blocked_c, 1, kernel_m_size);
-                dgescal_row_major_db(mr, nr, beta, ptr_c_j, inc_row_c, inc_col_c);
+                if (beta == 0.0) {
+                    /* C *= 0 must not touch the caller's tile: stale memory
+                       may hold NaN bit patterns (0 * NaN = NaN) */
+                    for (int r = 0; r < mr; r++) {
+                        for (int c = 0; c < nr; c++) {
+                            ptr_c_j[r * inc_row_c + c * inc_col_c] = 0.0;
+                        }
+                    }
+                } else {
+                    dgescal_row_major_db(mr, nr, beta, ptr_c_j, inc_row_c, inc_col_c);
+                }
                 dgeaxpy_row_major_db(mr, nr, 1.0, blocked_c, 1, kernel_m_size, ptr_c_j, inc_row_c, inc_col_c);
             }
         }
@@ -1402,23 +1412,23 @@ static void fiv_matrix_mul_blocked_real64(
    in the L3-cache budget, otherwise to the blocked path.
    ========================================================================== */
 
-fiv_ret fiv_matrix_mul_real64(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
+fiv_ret fiv_matrix_mul_real64(fiv_mat* dst, const fiv_mat* mat_a, const fiv_mat* mat_b,
                               int a_transpose, int b_transpose, fiv_scalar alpha, fiv_scalar beta)
 {
-    if (dst == NULL || A == NULL || B == NULL) return FIV_RET_ERR_PARA;
-    if (dst->data.ptr == NULL || A->data.ptr == NULL || B->data.ptr == NULL) return FIV_RET_ERR_PARA;
-    if (dst->data_continue == 0 || A->data_continue == 0 || B->data_continue == 0) return FIV_RET_ERR_PARA;
-    if (A->dtype != FIV_64F1 || B->dtype != FIV_64F1 || dst->dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
+    if (dst == NULL || mat_a == NULL || mat_b == NULL) return FIV_RET_ERR_PARA;
+    if (dst->data.ptr == NULL || mat_a->data.ptr == NULL || mat_b->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (dst->data_continue == 0 || mat_a->data_continue == 0 || mat_b->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (mat_a->dtype != FIV_64F1 || mat_b->dtype != FIV_64F1 || dst->dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
     if (alpha.id != FIV_ID_SCALAR || alpha.dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
     if (beta.id != FIV_ID_SCALAR || beta.dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
     ivf64 alpha_f = alpha.data.value_fp64;
     ivf64 beta_f  = beta.data.value_fp64;
-    if (dst->data.ptr == A->data.ptr || dst->data.ptr == B->data.ptr) return FIV_RET_ERR_PARA;
+    if (dst->data.ptr == mat_a->data.ptr || dst->data.ptr == mat_b->data.ptr) return FIV_RET_ERR_PARA;
 
-    const int ra = (int)A->shapes[0];
-    const int ca = (int)A->shapes[1];
-    const int rb = (int)B->shapes[0];
-    const int cb = (int)B->shapes[1];
+    const int ra = (int)mat_a->shapes[0];
+    const int ca = (int)mat_a->shapes[1];
+    const int rb = (int)mat_b->shapes[0];
+    const int cb = (int)mat_b->shapes[1];
     if (ra <= 0 || ca <= 0 || rb <= 0 || cb <= 0) return FIV_RET_ERR_PARA;
 
     const int M  = a_transpose ? ca : ra;
@@ -1430,12 +1440,12 @@ fiv_ret fiv_matrix_mul_real64(fiv_mat* dst, const fiv_mat* A, const fiv_mat* B,
     if ((int)dst->shapes[0] != M || (int)dst->shapes[1] != N) return FIV_RET_ERR_PARA;
     if (dst->total_bytes < (size_t)M * (size_t)N * (size_t)dst->element_bytes) return FIV_RET_ERR_PARA;
 
-    ivf64* a = (ivf64*)A->data.ptr;
-    ivf64* b = (ivf64*)B->data.ptr;
+    ivf64* a = (ivf64*)mat_a->data.ptr;
+    ivf64* b = (ivf64*)mat_b->data.ptr;
     ivf64* c = (ivf64*)dst->data.ptr;
 
     const size_t ws_bytes = ((size_t)ra * (size_t)ca + (size_t)rb * (size_t)cb +
-                             (size_t)M * (size_t)N) * (size_t)A->element_bytes;
+                             (size_t)M * (size_t)N) * (size_t)mat_a->element_bytes;
 
     if (ws_bytes <= FIV_MAT_MUL_DB_L3_LIMIT_BYTES) {
         if (!a_transpose && !b_transpose)
