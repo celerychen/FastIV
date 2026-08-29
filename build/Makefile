@@ -27,9 +27,9 @@ OBJDIR    := ../obj
 BINDIR    := .
 
 CORE      := fiv_common fiv_ctensor fiv_binary_op
-MAT       := fiv_mat_transpose fiv_mat_vec fiv_mat_vec_db fiv_mat_mul fiv_mat_mul_db fiv_mat_reduce_db fiv_linalg_kernels fiv_mat_cholesky fiv_mat_lu
+MAT       := fiv_mat_transpose fiv_mat_vec fiv_mat_vec_db fiv_mat_mul fiv_mat_mul_db fiv_mat_reduce_db fiv_linalg_kernels fiv_mat_cholesky fiv_mat_lu fiv_mat_eig_sym fiv_mat_svd
 NN        := fiv_nn_infer fiv_nn_topo fiv_nn_train fiv_linear_node fiv_activate_fn fiv_nn_conv2d fiv_flatten_node fiv_max_2d fiv_add_node fiv_pad_node
-TESTS     := test_darray test_ctensor test_mat_transpose test_mat_vec test_mat_mul_vec_db test_mat_mul test_mat_mul_db test_mat_reduce_db test_mat_cholesky test_mat_lu test_nn test_nn_mnist test_nn_conv2d test_nn_mnist_conv test_blazeface test_image_io test_color_space_perf test_data_convert test_face_api
+TESTS     := test_darray test_ctensor test_mat_transpose test_mat_vec test_mat_mul_vec_db test_mat_mul test_mat_mul_db test_mat_reduce_db test_mat_cholesky test_mat_lu test_mat_eig_sym test_mat_svd test_nn test_nn_mnist test_nn_conv2d test_nn_mnist_conv test_blazeface test_image_io test_color_space_perf test_data_convert test_face_api
 
 APPFACE   := ../app/face
 APPFACE_OBJS := $(OBJDIR)/fiv_face_weights.o $(OBJDIR)/fiv_face_warp.o $(OBJDIR)/fiv_face.o
@@ -51,6 +51,8 @@ test_mat_mul_db:     $(OBJDIR)/test_mat_mul_db.o $(OBJDIR)/fiv_mat_mul.o $(OBJDI
 test_mat_reduce_db: $(OBJDIR)/test_mat_reduce_db.o $(OBJDIR)/fiv_mat_reduce.o $(OBJDIR)/fiv_mat_reduce_db.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 test_mat_cholesky: $(OBJDIR)/test_mat_cholesky.o $(OBJDIR)/fiv_linalg_kernels.o $(OBJDIR)/fiv_mat_cholesky.o $(OBJDIR)/fiv_mat_lu.o $(OBJDIR)/fiv_mat_transpose.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_mat_mul_db.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 test_mat_lu: $(OBJDIR)/test_mat_lu.o $(OBJDIR)/fiv_linalg_kernels.o $(OBJDIR)/fiv_mat_cholesky.o $(OBJDIR)/fiv_mat_lu.o $(OBJDIR)/fiv_mat_transpose.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_mat_mul_db.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
+test_mat_eig_sym: $(OBJDIR)/test_mat_eig_sym.o $(OBJDIR)/fiv_linalg_kernels.o $(OBJDIR)/fiv_mat_eig_sym.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_mat_mul_db.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
+test_mat_svd: $(OBJDIR)/test_mat_svd.o $(OBJDIR)/fiv_mat_svd.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_mat_mul_db.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 test_nn:            $(OBJDIR)/test_nn.o $(OBJDIR)/fiv_nn_infer.o $(OBJDIR)/fiv_nn_topo.o $(OBJDIR)/fiv_nn_train.o $(OBJDIR)/fiv_linear_node.o $(OBJDIR)/fiv_activate_fn.o $(OBJDIR)/fiv_nn_conv2d.o $(OBJDIR)/fiv_flatten_node.o $(OBJDIR)/fiv_max_2d.o $(OBJDIR)/fiv_add_node.o $(OBJDIR)/fiv_pad_node.o $(OBJDIR)/fiv_mat_vec.o $(OBJDIR)/fiv_mat_vec_db.o $(OBJDIR)/fiv_mat_reduce.o $(OBJDIR)/fiv_mat_reduce_db.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_mat_mul_db.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 test_nn_mnist:      $(OBJDIR)/test_nn_mnist.o $(OBJDIR)/fiv_nn_infer.o $(OBJDIR)/fiv_nn_topo.o $(OBJDIR)/fiv_nn_train.o $(OBJDIR)/fiv_linear_node.o $(OBJDIR)/fiv_activate_fn.o $(OBJDIR)/fiv_nn_conv2d.o $(OBJDIR)/fiv_flatten_node.o $(OBJDIR)/fiv_max_2d.o $(OBJDIR)/fiv_add_node.o $(OBJDIR)/fiv_pad_node.o $(OBJDIR)/fiv_mat_vec.o $(OBJDIR)/fiv_mat_vec_db.o $(OBJDIR)/fiv_mat_reduce.o $(OBJDIR)/fiv_mat_reduce_db.o $(OBJDIR)/fiv_mat_mul.o $(OBJDIR)/fiv_mat_mul_db.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 test_nn_conv2d:     $(OBJDIR)/test_nn_conv2d.o $(OBJDIR)/fiv_nn_conv2d.o $(OBJDIR)/fiv_max_2d.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o

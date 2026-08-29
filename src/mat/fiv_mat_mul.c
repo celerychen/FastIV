@@ -1531,7 +1531,17 @@ static void mat_mul_kernel_row_major(
             }    else {
                 ivf32 FIV_DALIGNED blocked_c[FIV_MAX_KERNEL_SIZE];
                 kernel(kc, alpha, ptr_a, ptr_b_j, 0.f, blocked_c, 1, kernel_m_size);
-                dgescal_row_major(mr, nr, beta, ptr_c_j, inc_row_c, inc_col_c);
+                if (beta == 0.f) {
+                    /* C *= 0 must not touch the caller's tile: stale memory
+                       may hold NaN bit patterns (0 * NaN = NaN) */
+                    for (int r = 0; r < mr; r++) {
+                        for (int c = 0; c < nr; c++) {
+                            ptr_c_j[r * inc_row_c + c * inc_col_c] = 0.f;
+                        }
+                    }
+                } else {
+                    dgescal_row_major(mr, nr, beta, ptr_c_j, inc_row_c, inc_col_c);
+                }
                 dgeaxpy_row_major(mr, nr, 1.f, blocked_c, 1, kernel_m_size, ptr_c_j, inc_row_c, inc_col_c);
 
             }
