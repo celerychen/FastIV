@@ -719,11 +719,17 @@ fiv_ret fiv_matrix_svd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat
         memcpy(work, (const void*)mat_a->data.ptr,
                (size_t)rows * cols * sizeof(ivf32));
     } else {
-        for (int r = 0; r < rows; r++) {
-            const ivf32* src_row = (const ivf32*)mat_a->data.ptr + (size_t)r * cols;
-            for (int c = 0; c < cols; c++) {
-                work[(size_t)c * work_ld + r] = src_row[c];
-            }
+        /* wide: copy A into work as A^T (work rows x cols = cols x rows, ld = rows) */
+        fiv_mat work_mat = *mat_a;          /* inherit dtype / element_bytes / data_continue */
+        work_mat.data.ptr    = work;
+        work_mat.shapes[0]   = (size_t)work_rows;   /* dst rows = cols */
+        work_mat.shapes[1]   = (size_t)work_cols;   /* dst cols = rows */
+        work_mat.strides[0]  = (size_t)work_cols * mat_a->element_bytes;
+        work_mat.strides[1]  = (size_t)mat_a->element_bytes;
+        work_mat.total_bytes = (size_t)rows * cols * mat_a->element_bytes;
+        if (fiv_matrix_transpose(&work_mat, mat_a) != FIV_RET_OK) {
+            fiv_free(work);
+            return FIV_RET_ERR_UNKNOWN;
         }
     }
     /* the tall SVD of A^T swaps the output roles */
