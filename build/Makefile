@@ -160,14 +160,14 @@ run: all
 # Cross-language oracle: C driver vs the real torch pdlp.py on the same problems.
 oracle: test_lp_solve
 	./test_lp_solve > /tmp/c_oracle.txt
-	python3 ../src/lp/oracle_lp_solve.py > /tmp/py_oracle.txt
-	python3 ../src/lp/compare_oracle.py /tmp/c_oracle.txt /tmp/py_oracle.txt
+	python3 ../src/lp/extra_test/oracle_lp_solve.py > /tmp/py_oracle.txt
+	python3 ../src/lp/extra_test/compare_oracle.py /tmp/c_oracle.txt /tmp/py_oracle.txt
 
 # M5 oracle: the 13 standard LP problems, C port (dense+sparse) vs torch pdlp.py.
 oracle13: test_lp_solve13
 	./test_lp_solve13 > /tmp/c_oracle13.txt
-	python3 ../src/lp/oracle_lp_solve13.py > /tmp/py_oracle13.txt
-	python3 ../src/lp/compare_oracle13.py /tmp/c_oracle13.txt /tmp/py_oracle13.txt
+	python3 ../src/lp/extra_test/oracle_lp_solve13.py > /tmp/py_oracle13.txt
+	python3 ../src/lp/extra_test/compare_oracle13.py /tmp/c_oracle13.txt /tmp/py_oracle13.txt
 
 clean:
 	rm -f $(OBJDIR)/*.o $(addprefix $(BINDIR)/,$(TESTS))
