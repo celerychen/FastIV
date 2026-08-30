@@ -108,6 +108,9 @@ $(OBJDIR)/%.o: ../src/nn/%.c | $(OBJDIR)
 $(OBJDIR)/%.o: ../src/image/%.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
+$(OBJDIR)/%.o: ../src/lp/extra_test/%.c | $(OBJDIR)
+	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
+
 $(OBJDIR)/%.o: ../src/lp/%.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
@@ -115,7 +118,7 @@ $(OBJDIR)/%.o: ../src/lp/%.c | $(OBJDIR)
 $(OBJDIR)/fiv_sp_matrix.o: ../src/lp/fiv_sp_matrix.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
-$(OBJDIR)/test_lp_sp_matrix.o: ../src/lp/test_sp_matrix.c | $(OBJDIR)
+$(OBJDIR)/test_lp_sp_matrix.o: ../src/lp/extra_test/test_sp_matrix.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
 $(OBJDIR)/fiv_lp_vec.o: ../src/lp/fiv_lp_vec.c | $(OBJDIR)
@@ -124,19 +127,19 @@ $(OBJDIR)/fiv_lp_vec.o: ../src/lp/fiv_lp_vec.c | $(OBJDIR)
 $(OBJDIR)/fiv_lp_mat.o: ../src/lp/fiv_lp_mat.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
-$(OBJDIR)/test_lp_ops.o: ../src/lp/test_lp_ops.c | $(OBJDIR)
+$(OBJDIR)/test_lp_ops.o: ../src/lp/extra_test/test_lp_ops.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
 $(OBJDIR)/fiv_lp_rescale.o: ../src/lp/fiv_lp_rescale.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
-$(OBJDIR)/test_lp_rescale.o: ../src/lp/test_lp_rescale.c | $(OBJDIR)
+$(OBJDIR)/test_lp_rescale.o: ../src/lp/extra_test/test_lp_rescale.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
 $(OBJDIR)/fiv_lp_pdhg.o: ../src/lp/fiv_lp_pdhg.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
-$(OBJDIR)/test_lp_pdhg.o: ../src/lp/test_lp_pdhg.c | $(OBJDIR)
+$(OBJDIR)/test_lp_pdhg.o: ../src/lp/extra_test/test_lp_pdhg.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(ARCH_CFLAGS) -std=$(STD) $(CPPFLAGS) -c $< -o $@
 
 $(OBJDIR)/%.o: ../src/test/%.c | $(OBJDIR)
