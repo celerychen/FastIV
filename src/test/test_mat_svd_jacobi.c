@@ -9,7 +9,9 @@
  * See LICENSE file in project root for full license text.
  */
 
-/* Correctness tests for fiv_matrix_svd (api/fiv_matrix.h): thin SVD.
+/* Correctness tests for fiv_matrix_svd_jacobi (api/fiv_matrix.h): thin SVD
+ * via one-sided Jacobi rotations, OpenCV output convention (mat_vt holds V^T
+ * with right singular vectors in its ROWS).
  * Singular values are checked against sqrt of the eigenvalues of A^T A
  * computed by a double-precision cyclic Jacobi reference; the vector
  * factor is checked through the residuals ||A*V - U*S||_F / ||A||_F and
@@ -19,6 +21,7 @@
  * and the error paths. */
 
 #include "fiv_matrix.h"
+#include "fiv_mat_svd_backends.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -146,36 +149,16 @@ static void ref_svd_values(const ivf32* a_fl, int rows, int cols, double* sing_r
 }
 
 /* one case; with_vecs switches the vector outputs on */
-static void run_case_ex(int mrows, int ncols, int rank_def, int with_vecs,
-                        int do_timing, int v_transpose, fiv_svd_type svd_type);
-
 static void run_case(int mrows, int ncols, int rank_def, int with_vecs, int do_timing)
 {
-    run_case_ex(mrows, ncols, rank_def, with_vecs, do_timing, 0, FIV_BCD_SVD);
-}
-
-/* extended case: caller picks the backend and the V output layout */
-static void run_case_ex(int mrows, int ncols, int rank_def, int with_vecs,
-                        int do_timing, int v_transpose, fiv_svd_type svd_type)
-{
     char name[96];
-    snprintf(name, sizeof(name), "%dx%d vt%d %s%s", mrows, ncols, v_transpose,
-             svd_type == FIV_JACOBI_SVD ? "J" : "B",
+    snprintf(name, sizeof(name), "%dx%d%s%s", mrows, ncols,
              rank_def > 0 ? " rank-def" : "", with_vecs ? "" : " vals-only");
 
     const int dim = mrows < ncols ? mrows : ncols;
     size_t sh[2] = { (size_t)mrows, (size_t)ncols };
     size_t sh_u[2] = { (size_t)mrows, (size_t)dim };
-    /* mat_v shape follows the requested V layout: V columns (cols x dim) or
-       V^T rows (dim x cols) */
-    size_t sh_v[2];
-    if (v_transpose) {
-        sh_v[0] = (size_t)dim;
-        sh_v[1] = (size_t)ncols;
-    } else {
-        sh_v[0] = (size_t)ncols;
-        sh_v[1] = (size_t)dim;
-    }
+    size_t sh_v[2] = { (size_t)dim, (size_t)ncols };
     fiv_mat* mat_a = fiv_create_tensor2d(sh, FIV_32F1);
     fiv_mat* mat_u = with_vecs ? fiv_create_tensor2d(sh_u, FIV_32F1) : NULL;
     fiv_mat* mat_v = with_vecs ? fiv_create_tensor2d(sh_v, FIV_32F1) : NULL;
@@ -227,7 +210,7 @@ static void run_case_ex(int mrows, int ncols, int rank_def, int with_vecs,
 
     ivf32* sing = (ivf32*)malloc(sizeof(ivf32) * dim);
     clock_t time0 = clock();
-    const fiv_ret ret = fiv_matrix_svd(mat_a, sing, mat_u, mat_v, v_transpose, svd_type);
+    const fiv_ret ret = fiv_matrix_svd_jacobi(mat_a, sing, mat_u, mat_v);
     clock_t time1 = clock();
     CHECK(ret == FIV_RET_OK, name);
     if (ret != FIV_RET_OK) goto out_free;
@@ -274,47 +257,25 @@ static void run_case_ex(int mrows, int ncols, int rank_def, int with_vecs,
     if (with_vecs) {
         const ivf32* udat = mat_u->data.fl;
         const ivf32* vdat = mat_v->data.fl;
-        /* V(j, i) accessor: right vector j, component i; the element sits in
-           mat_v columns (v_transpose == 0) or mat_v^T rows (v_transpose != 0) */
-        const int vt_layout = v_transpose;
-#define VEL(j, i) (vdat[vt_layout ? (size_t)(j) * ncols + (i) \
-                          : (size_t)(i) * dim + (j)])
 
-        /* ||A*V - U*S||_F / ||A||_F */
+        /* ||U*diag(s)*vt - A||_F / ||A||_F (direct reconstruction) */
         {
             double resid = 0.0;
-            for (int col = 0; col < dim; col++) {
-                for (int ir = 0; ir < mrows; ir++) {
-                    double acc = 0.0;
-                    for (int mid = 0; mid < ncols; mid++) {
-                        acc += a_saved[(size_t)ir * ncols + mid] *
-                               (double)VEL(col, mid);
-                    }
-                    acc -= (double)sing[col] * (double)udat[(size_t)ir * dim + col];
-                    resid += acc * acc;
-                }
-            }
-            const double rel = sqrt(resid) / fro_scale;
-            CHECK(rel < 1e-3, "residual ||A*V - U*S|| small");
-            if (rel > 1e-5) printf("    (%s av-us %.2e)\n", name, rel);
-        }
-        /* ||A^T*U - V*S||_F / ||A||_F */
-        {
-            double resid = 0.0;
-            for (int col = 0; col < dim; col++) {
+            for (int ir = 0; ir < mrows; ir++) {
                 for (int ic = 0; ic < ncols; ic++) {
                     double acc = 0.0;
-                    for (int mid = 0; mid < mrows; mid++) {
-                        acc += a_saved[(size_t)mid * ncols + ic] *
-                               (double)udat[(size_t)mid * dim + col];
+                    for (int mid = 0; mid < dim; mid++) {
+                        acc += (double)udat[(size_t)ir * dim + mid] *
+                               (double)sing[mid] *
+                               (double)vdat[(size_t)mid * ncols + ic];
                     }
-                    acc -= (double)sing[col] * (double)VEL(col, ic);
+                    acc -= a_saved[(size_t)ir * ncols + ic];
                     resid += acc * acc;
                 }
             }
             const double rel = sqrt(resid) / fro_scale;
-            CHECK(rel < 1e-3, "residual ||A^T*U - V*S|| small");
-            if (rel > 1e-5) printf("    (%s atu-vs %.2e)\n", name, rel);
+            CHECK(rel < 1e-3, "reconstruction ||U*S*vt - A|| small");
+            if (rel > 1e-5) printf("    (%s recon %.2e)\n", name, rel);
         }
         /* orthonormality of U and V */
         {
@@ -337,18 +298,17 @@ static void run_case_ex(int mrows, int ncols, int rank_def, int with_vecs,
                 for (int cb = ca; cb < dim; cb++) {
                     double acc = 0.0;
                     for (int ic = 0; ic < ncols; ic++) {
-                        acc += (double)VEL(ca, ic) * (double)VEL(cb, ic);
+                        acc += (double)vdat[(size_t)ca * ncols + ic] *
+                               (double)vdat[(size_t)cb * ncols + ic];
                     }
                     const double dev = fabs(acc - (ca == cb ? 1.0 : 0.0));
                     if (dev > worst) worst = dev;
                 }
             }
-            CHECK(worst < 1e-3, "V orthonormal");
-            if (worst > 1e-5) printf("    (%s orth V %.2e)\n", name, worst);
+            CHECK(worst < 1e-3, "vt rows orthonormal");
+            if (worst > 1e-5) printf("    (%s orth vt %.2e)\n", name, worst);
         }
     }
-
-#undef VEL
 
 out_free:
     free(sing);
@@ -368,35 +328,35 @@ static void test_error_paths(void)
     ivf32 sing2[2];
     ivf32 sing3[3];
 
-    CHECK(fiv_matrix_svd(NULL, sing2, NULL, NULL, 0, FIV_BCD_SVD) == FIV_RET_ERR_PARA, "null tensor");
-    CHECK(fiv_matrix_svd(NULL, NULL, NULL, NULL, 0, FIV_BCD_SVD) == FIV_RET_ERR_PARA, "null sing");
+    CHECK(fiv_matrix_svd_jacobi(NULL, sing2, NULL, NULL) == FIV_RET_ERR_PARA, "null tensor");
+    CHECK(fiv_matrix_svd_jacobi(NULL, NULL, NULL, NULL) == FIV_RET_ERR_PARA, "null sing");
 
     fiv_mat* m23 = fiv_create_tensor2d(sh23, FIV_32F1);
     CHECK(m23 != NULL, "alloc ok");
-    CHECK(fiv_matrix_svd(m23, sing2, NULL, NULL, 0, FIV_BCD_SVD) == FIV_RET_OK, "values-only len 2 ok");
-    CHECK(fiv_matrix_svd(m23, sing3, NULL, NULL, 0, FIV_BCD_SVD) == FIV_RET_OK, "values-only ok");
+    CHECK(fiv_matrix_svd_jacobi(m23, sing2, NULL, NULL) == FIV_RET_OK, "values-only len 2 ok");
+    CHECK(fiv_matrix_svd_jacobi(m23, sing3, NULL, NULL) == FIV_RET_OK, "values-only ok");
 
     fiv_mat* mi = fiv_create_tensor2d(sh23, FIV_32S1);
     CHECK(mi != NULL &&
-          fiv_matrix_svd(mi, sing2, NULL, NULL, 0, FIV_BCD_SVD) == FIV_RET_ERR_NOT_SUPPORT, "32S rejected");
+          fiv_matrix_svd_jacobi(mi, sing2, NULL, NULL) == FIV_RET_ERR_NOT_SUPPORT, "32S rejected");
     fiv_release_tensor2d(&mi);
 
     m23->data_continue = 0;
-    CHECK(fiv_matrix_svd(m23, sing2, NULL, NULL, 0, FIV_BCD_SVD) == FIV_RET_ERR_PARA, "non-contiguous");
+    CHECK(fiv_matrix_svd_jacobi(m23, sing2, NULL, NULL) == FIV_RET_ERR_PARA, "non-contiguous");
     m23->data_continue = 1;
 
     /* wrong U shape (must be rows x dim = 2 x 2) */
     size_t shu[2] = { 2, 3 };
     fiv_mat* mbad = fiv_create_tensor2d(shu, FIV_32F1);
     CHECK(mbad != NULL &&
-          fiv_matrix_svd(m23, sing2, mbad, NULL, 0, FIV_BCD_SVD) == FIV_RET_ERR_PARA, "bad U shape");
+          fiv_matrix_svd_jacobi(m23, sing2, mbad, NULL) == FIV_RET_ERR_PARA, "bad U shape");
     fiv_release_tensor2d(&mbad);
 
     /* aliasing rejected */
     fiv_mat* malias = fiv_create_tensor2d(sh22, FIV_32F1);
     void* saved = malias->data.ptr;
     malias->data.ptr = m23->data.ptr;
-    CHECK(fiv_matrix_svd(m23, sing2, malias, NULL, 0, FIV_BCD_SVD) == FIV_RET_ERR_PARA, "U aliasing A");
+    CHECK(fiv_matrix_svd_jacobi(m23, sing2, malias, NULL) == FIV_RET_ERR_PARA, "U aliasing A");
     malias->data.ptr = saved;
     fiv_release_tensor2d(&malias);
 
@@ -418,20 +378,6 @@ int main(void)
     /* rank-deficient: exact zero singular values, tall and wide */
     run_case(100, 40, 15, 1, 0);
     run_case(40, 100, 15, 1, 0);
-
-    /* backend x V-layout matrix through the unified entry: both backends,
-       both v_transpose layouts, tall / wide / square */
-    {
-        static const int kComboSizes[][2] = { {7, 5}, {5, 9}, {33, 40}, {70, 60} };
-        for (unsigned s = 0; s < sizeof(kComboSizes) / sizeof(kComboSizes[0]); s++) {
-            for (int t = 0; t < 2; t++) {
-                for (int vt = 0; vt < 2; vt++) {
-                    run_case_ex(kComboSizes[s][0], kComboSizes[s][1], 0, 1, 0,
-                                vt, t == 0 ? FIV_JACOBI_SVD : FIV_BCD_SVD);
-                }
-            }
-        }
-    }
     /* values-only mode */
     run_case(300, 200, 0, 0, 0);
 

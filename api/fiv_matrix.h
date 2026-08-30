@@ -60,12 +60,31 @@ fiv_ret fiv_matrix_eig_sym(fiv_mat* mat_a, ivf32* evals, fiv_mat* mat_evec, int 
 
 /* Thin SVD of a contiguous float32 matrix A (input is preserved):
    A = U * diag(sing_vals) * V^T with sing_vals[k] descending, k =
-   min(rows,cols). Optional mat_u (rows x k) / mat_v (cols x k) receive the
-   singular vectors in their columns; NULL computes values only. UNKNOWN if
-   the bidiagonal QR fails to converge. */
-fiv_ret fiv_matrix_svd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat* mat_v);
+   min(rows,cols); sing_vals may be NULL together with both factor outputs
+   for a values-only run.
+   mat_u (rows x k, optional): orthonormal LEFT singular vectors in its
+   COLUMNS, column j matching sing_vals[j].
+   mat_v (optional): the RIGHT singular vectors in one of two layouts,
+   selected by v_transpose:
+     v_transpose == 0 -> mat_v is (cols x k), vectors in its COLUMNS;
+     v_transpose != 0 -> mat_v is (k x cols), vectors in its ROWS (V^T, the
+                          OpenCV SVD::compute "vt" convention).
+   type selects the backend: FIV_JACOBI_SVD runs one-sided Jacobi sweeps
+   (OpenCV lineage; highest accuracy; prefer for small and ill-conditioned
+   inputs), FIV_BCD_SVD runs the blocked Householder bidiagonalization +
+   Golub-Kahan QR path (LAPACK dgesdd lineage; fastest for large inputs).
+   Both share this exact contract and preserve A. UNKNOWN if the selected
+   backend fails to converge; NOT_SUPPORT for an unknown type. */
 
-typedef enum : iv32u {
+typedef FIV_ENUM(iv32u){
+     FIV_JACOBI_SVD,
+     FIV_BCD_SVD,
+}fiv_svd_type;
+
+
+fiv_ret fiv_matrix_svd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat* mat_v, int v_transpose, fiv_svd_type type);
+
+typedef FIV_ENUM(iv32u) {
    FIV_L1_NORM,
    FIV_L2_NORM,
    FIV_INF_NORM,
