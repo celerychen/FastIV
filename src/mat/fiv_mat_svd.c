@@ -666,7 +666,7 @@ static void fiv_svd_sort_real32(ivf32* sing_vals, int dim,
     }
 }
 
-fiv_ret fiv_matrix_svd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat* mat_v)
+fiv_ret fiv_matrix_svd_bcd(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, fiv_mat* mat_v)
 {
     if (mat_a == NULL || mat_a->data.ptr == NULL) return FIV_RET_ERR_PARA;
     if (sing_vals == NULL)                        return FIV_RET_ERR_PARA;
