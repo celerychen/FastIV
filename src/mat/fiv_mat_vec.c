@@ -665,6 +665,53 @@ fiv_ret fiv_vec_axpy(fiv_vec* y, fiv_scalar a, fiv_vec* x)
 }
 
 
+/* ==================== Vector scale: y = x * scale ==================== */
+
+/* ivf32 backend: y = x * scale, in-place (y aliases x) allowed. */
+static void _fiv_vec_scale_real32(ivf32* y, ivf32 scale_value, const ivf32* x, size_t element_count)
+{
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        y[idx] = scale_value * x[idx];
+    }
+}
+
+/* ivf64 backend: y = x * scale, in-place (y aliases x) allowed. */
+static void _fiv_vec_scale_real64(ivf64* y, ivf64 scale_value, const ivf64* x, size_t element_count)
+{
+    for (size_t idx = 0; idx < element_count; idx++)
+    {
+        y[idx] = scale_value * x[idx];
+    }
+}
+
+fiv_ret fiv_vec_scale(fiv_vec* y, fiv_vec* x, fiv_scalar scale)
+{
+    if (y == NULL || x == NULL) return FIV_RET_ERR_PARA;
+    if (y->data.ptr == NULL || x->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (y->data_continue == 0 || x->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (y->dtype != x->dtype) return FIV_RET_ERR_PARA;
+    if (y->dtype != FIV_32F1 && y->dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
+    if (y->shapes[0] != x->shapes[0]) return FIV_RET_ERR_PARA;
+
+    const size_t element_count = y->shapes[0];
+
+    if (y->dtype == FIV_64F1)
+    {
+        const ivf64 scale_value = (scale.dtype == FIV_64F1) ? scale.data.value_fp64
+                                                        : (ivf64)scale.data.value_fp32;
+        _fiv_vec_scale_real64((ivf64*)y->data.db, scale_value,
+                              (const ivf64*)x->data.db, element_count);
+        return FIV_RET_OK;
+    }
+    const ivf32 scale_value = (scale.dtype == FIV_64F1) ? (ivf32)scale.data.value_fp64
+                                                      : scale.data.value_fp32;
+    _fiv_vec_scale_real32((ivf32*)y->data.fl, scale_value,
+                          (const ivf32*)x->data.fl, element_count);
+    return FIV_RET_OK;
+}
+
+
 /* ==================== Vector dot product: sum_i a[i] * b[i] ==================== */
 
 #if !defined(FIV_USE_ARM_NEON)
