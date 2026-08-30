@@ -48,7 +48,9 @@ with the constraints passed as the stacked matrix `K = [G ; A]` (m x n) and righ
 | Algorithm core | `fiv_lp_pdhg.c` | Adaptive-step PDHG, primal-weight update, box normal-cone lambda, squared KKT error |
 | Driver | `fiv_lp_solve.c` | Rescale -> initialize -> restart loop -> termination criteria (optimal / primal infeasible / dual infeasible) -> unscale |
 
-Public headers: `api/fiv_sp_matrix.h`, `api/fiv_lp_vec.h`, `api/fiv_lp_mat.h`, `api/fiv_lp_rescale.h`, `api/fiv_lp_pdhg.h`, `api/fiv_lp_solve.h`. The entry point is `fiv_lp_solve()`; its `fiv_lp_solve_params` may be NULL to use the PDLP defaults (10 Ruiz iterations, Pock-Chambolle alpha 1.0, tolerance 1e-4, 10000-iteration limit), and `fiv_lp_solve_info` reports objectives, duality gap, residuals and iteration count. All arithmetic is `FIV_64F1` (double precision).
+Following the project convention (one public header per module, internals next to their sources), only two LP headers are public: `api/fiv_sp_matrix.h` (the general sparse-matrix structure) and `api/fiv_lp_solve.h` (the solver entry point). The layered internals — `fiv_lp_vec.h`, `fiv_lp_mat.h`, `fiv_lp_rescale.h`, `fiv_lp_pdhg.h` — live in `src/lp/` alongside their `.c` files, as do the `mat` / `nn` / `image` modules. The constraint matrix type `fiv_lp_mat` is opaque to callers: build one with `fiv_lp_mat_wrap_dense` / `fiv_lp_mat_wrap_sparse` / `fiv_create_lp_mat_from_coo` and release it with `fiv_release_lp_mat`.
+
+The entry point is `fiv_lp_solve()`; its `fiv_lp_solve_params` may be NULL to use the PDLP defaults (10 Ruiz iterations, Pock-Chambolle alpha 1.0, tolerance 1e-4, 10000-iteration limit), and `fiv_lp_solve_info` reports objectives, duality gap, residuals and iteration count. All arithmetic is `FIV_64F1` (double precision).
 
 ### Tests
 

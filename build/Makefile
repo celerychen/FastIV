@@ -14,7 +14,7 @@
 
 CC        ?= cc
 CFLAGS    ?= -O2 -Wall
-CPPFLAGS  += -I../api -I../mat -I../src/mat -I../src/nn -I../src/image -I../import/image_io
+CPPFLAGS  += -I../api -I../mat -I../src/mat -I../src/nn -I../src/lp -I../src/image -I../import/image_io
 LDLIBS    ?= -lm
 STD       := $(shell printf '' | $(CC) -std=c23 -E -x c - >/dev/null 2>&1 && echo c23 || echo c2x)
 

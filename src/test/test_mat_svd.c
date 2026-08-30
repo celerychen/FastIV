@@ -159,7 +159,7 @@ static void run_case_ex(int mrows, int ncols, int rank_def, int with_vecs,
                         int do_timing, int v_transpose, fiv_svd_type svd_type)
 {
     char name[96];
-    snprintf(name, sizeof(name), "%dx%d vt%d %s%s", mrows, ncols, v_transpose,
+    snprintf(name, sizeof(name), "%dx%d vt%d %s%s%s", mrows, ncols, v_transpose,
              svd_type == FIV_JACOBI_SVD ? "J" : "B",
              rank_def > 0 ? " rank-def" : "", with_vecs ? "" : " vals-only");
 

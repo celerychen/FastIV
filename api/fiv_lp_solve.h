@@ -12,8 +12,8 @@
 #ifndef _FIV_LP_SOLVE_H_
 #define _FIV_LP_SOLVE_H_
 
-#include "fiv_ctensor.h"   /* fiv_vec, fiv_ret, ivf64 */
-#include "fiv_lp_mat.h"    /* fiv_lp_mat */
+#include "fiv_ctensor.h"    /* fiv_vec, fiv_ret, fiv_data_type, ivf64 */
+#include "fiv_sp_matrix.h"  /* fiv_sparse_mat (sparse backend) */
 
 #ifdef __cplusplus
 extern "C" {
@@ -40,9 +40,44 @@ extern "C" {
  *              l <= x <= u
  *   K is the STACKED matrix [G ; A] (m x n); q is [h ; b] (length m).
  *
+ * This header and fiv_sp_matrix.h are the ONLY public headers of the LP
+ * module; the layered internals (fiv_lp_vec / fiv_lp_mat / fiv_lp_rescale /
+ * fiv_lp_pdhg) live next to their sources in src/lp/.
+ *
  * Naming rule: solve() returns an enum (not a pointer), so it is NOT a
  * fiv_create_*; it writes the unscaled solutions into caller-owned x_out / y_out.
  * ========================================================================= */
+
+/* =========================================================================
+ * Problem matrix.
+ *
+ * fiv_lp_mat is the constraint matrix handed to fiv_lp_solve. It is OPAQUE
+ * here on purpose: the dense/sparse wrapper is an implementation detail of
+ * src/lp/, so its definition lives in src/lp/fiv_lp_mat.h together with the
+ * rest of the module's internal headers. Callers only build one through the
+ * constructors below and release it with fiv_release_lp_mat.
+ * ========================================================================= */
+
+typedef struct fiv_lp_mat fiv_lp_mat;
+
+/* Non-owning view over an existing dense matrix (m x n). The caller keeps
+ * ownership of dense_matrix and must release it separately. */
+fiv_lp_mat *fiv_lp_mat_wrap_dense(fiv_mat *dense_matrix);
+
+/* Non-owning view over an existing sparse matrix (CSR). The caller keeps
+ * ownership of sparse_matrix and must release it separately. */
+fiv_lp_mat *fiv_lp_mat_wrap_sparse(fiv_sparse_mat *sparse_matrix);
+
+/* Owning entry: build a CSR matrix from COO triplets (duplicate coordinates
+ * are accumulated) and wrap it. values points at num_nonzeros elements of
+ * value_dtype. Returns NULL on error. */
+fiv_lp_mat *fiv_create_lp_mat_from_coo(const int *row_indices, const int *col_indices,
+                                       const void *values, fiv_data_type value_dtype,
+                                       size_t num_nonzeros, size_t num_rows, size_t num_cols);
+
+/* Release a matrix built by any of the constructors above; *lp_matrix is set
+ * to NULL. Safe when *lp_matrix == NULL. */
+fiv_ret fiv_release_lp_mat(fiv_lp_mat **lp_matrix);
 
 typedef enum {
     FIV_LP_STATUS_OPTIMAL = 0,
