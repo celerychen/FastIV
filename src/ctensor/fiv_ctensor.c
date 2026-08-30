@@ -51,8 +51,8 @@ fiv_tensor1d* fiv_create_tensor1d(size_t size, fiv_data_type data_type) {
 	}
 	element_bytes = fiv_dtype_size_table[(int)data_type];
 	if (element_bytes == 0) return NULL;
-	if (size == 0 || element_bytes > SIZE_MAX / size) return NULL; // empty dim / overflow
-	total_bytes   = element_bytes * size;
+	if (size != 0 && element_bytes > SIZE_MAX / size) return NULL; // overflow (size 0 ok: empty tensor)
+	total_bytes   = (size == 0) ? 0 : element_bytes * size;
 
 	t = (fiv_tensor1d*)fiv_malloc(sizeof(fiv_tensor1d));
 	if (t == NULL) return NULL;
@@ -67,8 +67,8 @@ fiv_tensor1d* fiv_create_tensor1d(size_t size, fiv_data_type data_type) {
 	t->total_bytes    = total_bytes;
 	t->strides[0]     = element_bytes;
 
-	t->data.ptr = fiv_malloc(total_bytes);
-	if(t->data.ptr == NULL){
+	t->data.ptr = (size == 0) ? NULL : fiv_malloc(total_bytes);
+	if (size != 0 && t->data.ptr == NULL) {
 		fiv_free(t);
 		return NULL;
 	}
