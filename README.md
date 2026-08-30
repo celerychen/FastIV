@@ -8,7 +8,7 @@
 
 - **张量与基础数据结构**：提供统一的张量抽象与动态数组，作为上层算法的基础数据容器，支持任意维度张量及其逐元素二元运算。
 - **矩阵运算**：涵盖矩阵转置、矩阵-向量乘法与矩阵-矩阵乘法、Cholesky / LU 分解、对称特征分解与 SVD（分块双对角化 + Golub-Kahan QR 与 Jacobi 两条路径），面向 x86 / ARM 等异构架构做针对性优化。
-- **线性规划（PDLP）**：一阶算法求解大规模线性规划的完整 C 实现（移植自 Google OR-Tools PDLP），位于 `src/lp/`。含 CSR / CSC / COO 稀疏矩阵与 CSRL 打包视图、Ruiz 平衡与 Pock-Chambolle 重缩放、自适应步长 PDHG 迭代、重启策略与原始 / 对偶不可行判据；算法核心对稠密与稀疏后端统一抽象，全程双精度运算，可与 torch 参考实现逐题交叉验证。
+- **线性规划（PDLP）**：一阶算法求解大规模线性规划的完整 C 实现，位于 `src/lp/`。含 CSR / CSC / COO 稀疏矩阵与 CSRL 打包视图、Ruiz 平衡与 Pock-Chambolle 重缩放、自适应步长 PDHG 迭代、重启策略与原始 / 对偶不可行判据；算法核心对稠密与稀疏后端统一抽象，全程双精度运算，可与 torch 参考实现逐题交叉验证。
 - **神经网络**：提供计算图构建、前向推理与反向传播训练能力。算子涵盖线性层（Linear）、激活函数（ReLU / ReLU6）、二维卷积（标准 / 深度可分离 / 逐点 / 可分离，含 3×3 与 5×5 stride-2 的 SIMD 优化内核）、最大池化（Max2D）、展平（Flatten）、逐元素相加（Add）与填充（Pad）；支持模型保存与加载。卷积在 x86（AVX2）/ ARM（NEON）架构下做了针对性优化。
 - **高性能人脸检测器**：基于 BlazeFace 的端到端人脸检测应用，封装于 `app/face/`，对外仅暴露 `fiv_create_face_detetor` / `fiv_face_detector_on_image` / `fiv_release_face_detector` 三个接口，权重随仓库发布于 `app/face/models/`。
 
@@ -20,7 +20,7 @@ FastIV is dedicated to high-performance algorithms for speech, image and compute
 
 - **Tensor & data structures**: A unified tensor abstraction and dynamic array that serve as the foundational data containers for higher-level algorithms, supporting N-dimensional tensors and element-wise binary operations.
 - **Matrix operations**: Matrix transpose, matrix-vector and matrix-matrix multiplication, Cholesky / LU factorization, symmetric eigendecomposition and SVD (blocked bidiagonalization + Golub-Kahan QR, plus a Jacobi path), with targeted optimizations for heterogeneous architectures such as x86 and ARM.
-- **Linear programming (PDLP)**: A complete C port of PDLP (Primal-Dual Hybrid Gradient for Linear Programming) from Google OR-Tools, in `src/lp/`. It ships CSR / CSC / COO sparse storage with an optional SIMD-friendly CSRL packed view, Ruiz equilibration and Pock-Chambolle rescaling, adaptive-step PDHG with restarts, and primal / dual infeasibility detection. The algorithm core is written against a backend-agnostic dense/sparse abstraction, runs entirely in double precision, and is cross-validated problem-by-problem against the torch reference implementation.
+- **Linear programming (PDLP)**: A complete C implementation of PDLP (Primal-Dual Hybrid Gradient for Linear Programming), in `src/lp/`. It ships CSR / CSC / COO sparse storage with an optional SIMD-friendly CSRL packed view, Ruiz equilibration and Pock-Chambolle rescaling, adaptive-step PDHG with restarts, and primal / dual infeasibility detection. The algorithm core is written against a backend-agnostic dense/sparse abstraction, runs entirely in double precision, and is cross-validated problem-by-problem against the torch reference implementation.
 - **Neural networks**: Computation-graph construction, forward inference and backpropagation training. Operators include linear layers (Linear), activations (ReLU / ReLU6), 2D convolutions (standard / depthwise / pointwise / separable, with SIMD-optimized 3x3 and 5x5 stride-2 kernels), max pooling (Max2D), flatten, element-wise add and pad; with model save/load support. Convolutions are optimized for x86 (AVX2) and ARM (NEON).
 - **High-performance face detector**: An end-to-end BlazeFace-based face detector in `app/face/`, exposing only three public APIs — `fiv_create_face_detetor` / `fiv_face_detector_on_image` / `fiv_release_face_detector`, with weights shipped in the repo under `app/face/models/`.
 
@@ -70,14 +70,14 @@ Together they run 321 checks, all passing.
 
 ### Cross-validation against the reference implementation
 
-Beyond self-consistency, the C port is checked against the real torch `pdlp.py` it was ported from: both implementations solve the same problems and their termination status and objectives are compared.
+Beyond self-consistency, the C implementation is checked against a reference torch `pdlp.py` driver: both implementations solve the same problems and their termination status and objectives are compared.
 
 ```
 make -C build oracle      # general LP suite (9 comparisons)
 make -C build oracle13    # the 13 standard problems, incl. objective and optimal-vertex checks (26 comparisons)
 ```
 
-These targets need PyTorch and a local OR-Tools source tree that contains `pdlp.py`; set `FIV_PDLP_DIR` to that directory (it defaults to the author's checkout). They are optional — the plain `test_lp_*` binaries have no Python dependency.
+These targets need PyTorch and a local source tree containing `pdlp.py`; set `FIV_PDLP_DIR` to that directory (it defaults to the author's checkout). They are optional — the plain `test_lp_*` binaries have no Python dependency.
 
 ## Build
 
