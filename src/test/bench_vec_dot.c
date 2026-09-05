@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <time.h>
 #include "fiv_matrix.h"
+#include "fiv_common.h"   /* fiv_get_current_system_time */
 
 #if defined(FIV_USE_ARM_NEON)
 #include <arm_neon.h>
@@ -14,9 +14,7 @@
 
 static double now_sec(void)
 {
-    struct timespec t;
-    clock_gettime(CLOCK_MONOTONIC, &t);
-    return (double)t.tv_sec + (double)t.tv_nsec * 1e-9;
+    return fiv_get_current_system_time() / 1000.0;   /* ms -> seconds */
 }
 
 /* ---- naive C scalar baseline (compiler auto-vectorized at -O2) ---- */

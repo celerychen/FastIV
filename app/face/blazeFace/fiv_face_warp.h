@@ -11,6 +11,13 @@ extern "C" {
  * img_h image onto a tensor_size x tensor_size output. */
 void fiv_detection_warp_matrix(int img_w, int img_h, int tensor_size, ivf32 homography[9]);
 
+/* compute a 3x3 homography from 4 point correspondences (OpenCV
+ * getPerspectiveTransform; row-major, homography[8] = 1). src_pts / dst_pts
+ * are 4 (x, y) pairs. */
+void fiv_get_perspective_transform(const ivf32 src_pts[8],
+                                   const ivf32 dst_pts[8],
+                                   ivf32 homography[9]);
+
 /* fixed-point bilinear warp (OpenCV INTER_LINEAR / BORDER_CONSTANT) of an
  * h x w x cn uint8 image into a out_h x out_w buffer, using the forward
  * homography fwd_matrix (as produced by fiv_detection_warp_matrix). */

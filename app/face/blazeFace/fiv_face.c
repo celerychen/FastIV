@@ -29,6 +29,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+
+/* Internal per-module benchmarking, gated by env FIV_BENCH_FACE=1 (default off).
+   Accumulates stage times (preprocess / inference / collect-heads / postprocess)
+   over REPORT_N frames and prints per-stage plus per-node-type ms averages. Purely
+   a diagnostic: when the env var is unset none of this code takes the fast path. */
+#define FIV_FACE_BENCH_REPORT 250
 
 /* ---- detector context ---- */
 typedef struct {
@@ -419,6 +426,43 @@ static void collect_heads(fiv_face_detector* det,
             }
 }
 
+/* TEMP debug: dump input / regressors / scores in the reference dump format
+   when FIV_DUMP_FACE=1 (uint32 len | name | int32 n,c,h,w | float data). */
+static void fiv_dump_buf(FILE* f, const char* name, const void* data, int n, int c, int h, int w) {
+    iv32u nl = (iv32u)strlen(name);
+    fwrite(&nl, sizeof(iv32u), 1, f);
+    fwrite(name, 1, nl, f);
+    int hdr[4] = { n, c, h, w };
+    fwrite(hdr, sizeof(int), 4, f);
+    fwrite(data, sizeof(ivf32), (size_t)n * c * h * w, f);
+}
+static void fiv_tensor_dump_node(FILE* f, const char* name, const fiv_tensor4d* t) {
+    int n = t ? (int)t->shapes[0] : 0, c = t ? (int)t->shapes[1] : 0;
+    int h = t ? (int)t->shapes[2] : 0, w = t ? (int)t->shapes[3] : 0;
+    if (n == 0) { fiv_dump_buf(f, name, &n, 0, 0, 0, 0); return; }
+    fiv_dump_buf(f, name, t->data.fl, n, c, h, w);
+}
+static void fiv_face_debug_dump(fiv_face_detector* det,
+                                const ivf32 reg_pred[FIV_FACE_NUM_BOXES][FIV_FACE_NUM_COORDS],
+                                const ivf32 cls_score[]) {
+    const char* e = getenv("FIV_DUMP_FACE");
+    if (!(e && e[0] == '1')) return;
+    FILE* f = fopen("fastiv_facedump.bin", "wb");
+    if (!f) return;
+    fiv_dump_buf(f, "input", det->input->data.fl, 1, 3, FIV_FACE_TENSOR_SIZE, FIV_FACE_TENSOR_SIZE);
+    fiv_nn_network_context* nctx = (fiv_nn_network_context*)det->net;
+    char nm[32];
+    snprintf(nm, sizeof(nm), "stem");
+    fiv_tensor_dump_node(f, nm, (fiv_tensor4d*)nctx->nodes[det->stem_relu].output);
+    for (int i = 0; i < 16; i++) {
+        snprintf(nm, sizeof(nm), "block_%02d", i);
+        fiv_tensor_dump_node(f, nm, (fiv_tensor4d*)nctx->nodes[det->block_relu[i]].output);
+    }
+    fiv_dump_buf(f, "regressors", &reg_pred[0][0], 1, FIV_FACE_NUM_BOXES * FIV_FACE_NUM_COORDS, 1, 1);
+    fiv_dump_buf(f, "scores", cls_score, 1, FIV_FACE_NUM_BOXES, 1, 1);
+    fclose(f);
+}
+
 /* public API */
 void* fiv_create_face_detetor(char* model_name) {
     fiv_face_detector* det = (fiv_face_detector*)fiv_calloc(1, sizeof(fiv_face_detector));
@@ -465,19 +509,71 @@ fiv_ret fiv_face_detector_on_image(void* face_info, fiv_mat* image, void* detect
     fiv_face_detector* det    = (fiv_face_detector*)detector;
     fiv_face_result*   result = (fiv_face_result*)face_info;
 
+    /* ---- optional diagnostic timing (only when FIV_BENCH_FACE=1) ---- */
+    static int bench_on = -1;
+    static ivf64 a_pre = 0, a_inf = 0, a_head = 0, a_post = 0;
+#if FIV_NN_TIMING
+    static ivf64 a_type[FIV_NN_NODE_TYPE_NUM];
+#endif
+    static int a_n = 0;
+    if (bench_on < 0) {
+        const char* e = getenv("FIV_BENCH_FACE");
+        bench_on = (e != NULL && e[0] == '1') ? 1 : 0;
+    }
+    struct timespec b0, b1, b2, b3, b4;
+#if FIV_NN_TIMING
+    ivf64 btype[FIV_NN_NODE_TYPE_NUM];
+#endif
+    if (bench_on) clock_gettime(CLOCK_MONOTONIC, &b0);
     preprocess(det, image);
+    if (bench_on) clock_gettime(CLOCK_MONOTONIC, &b1);
+#if FIV_NN_TIMING
+    if (bench_on) fiv_nn_bench_enable(det->net);
+#endif
 
     void* infer_out = NULL;
     fiv_ret ret = fiv_nn_run_inference((fiv_nn_network_context*)det->net, det->input, &infer_out);
     if (ret != FIV_RET_OK) return ret;
+    if (bench_on) {
+        clock_gettime(CLOCK_MONOTONIC, &b2);
+#if FIV_NN_TIMING
+        fiv_nn_get_bench(det->net, btype, FIV_NN_NODE_TYPE_NUM);
+#endif
+    }
 
     ivf32 reg_pred[FIV_FACE_NUM_BOXES][FIV_FACE_NUM_COORDS];
     ivf32 cls_score[FIV_FACE_NUM_BOXES];
+    if (bench_on) clock_gettime(CLOCK_MONOTONIC, &b3);
     collect_heads(det, reg_pred, cls_score);
+    fiv_face_debug_dump(det, reg_pred, cls_score);
 
     int det_count = postprocess(reg_pred, cls_score, det->img_w, det->img_h,
                                 FIV_FACE_MIN_SCORE, result->detections, FIV_FACE_MAX_DETS);
     result->count = det_count;
+    if (bench_on) {
+        clock_gettime(CLOCK_MONOTONIC, &b4);
+        a_pre  += (double)(b1.tv_sec - b0.tv_sec) * 1000.0 + (double)(b1.tv_nsec - b0.tv_nsec) / 1e6;
+        a_inf  += (double)(b2.tv_sec - b1.tv_sec) * 1000.0 + (double)(b2.tv_nsec - b1.tv_nsec) / 1e6;
+        a_head += (double)(b3.tv_sec - b2.tv_sec) * 1000.0 + (double)(b3.tv_nsec - b2.tv_nsec) / 1e6;
+        a_post += (double)(b4.tv_sec - b3.tv_sec) * 1000.0 + (double)(b4.tv_nsec - b3.tv_nsec) / 1e6;
+#if FIV_NN_TIMING
+        for (int t = 0; t < FIV_NN_NODE_TYPE_NUM; t++) a_type[t] += btype[t];
+#endif
+        if (++a_n >= FIV_FACE_BENCH_REPORT) {
+            printf("[FACE-BENCH] %d frames  preprocess=%.3f  inference=%.3f  collect_heads=%.3f  postprocess=%.3f (ms/frame)\n",
+                   a_n, a_pre / a_n, a_inf / a_n, a_head / a_n, a_post / a_n);
+            printf("[FACE-BENCH] inference by node type (ms/frame):\n");
+#if FIV_NN_TIMING
+            for (int t = 0; t < FIV_NN_NODE_TYPE_NUM; t++)
+                if (a_type[t] / a_n > 0.0005)
+                    printf("  node_type=%d  %.4f ms\n", t, a_type[t] / a_n);
+#endif
+            a_pre = a_inf = a_head = a_post = 0; a_n = 0;
+#if FIV_NN_TIMING
+            for (int t = 0; t < FIV_NN_NODE_TYPE_NUM; t++) a_type[t] = 0.0;
+#endif
+        }
+    }
     return FIV_RET_OK;
 }
 

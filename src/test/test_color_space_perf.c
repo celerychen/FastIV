@@ -12,19 +12,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
 #include "fiv_image.h"
 #include "fiv_ctensor.h"
 #include "fiv_image_color_space.h"
-
-
-/* wall-clock nanoseconds */
-static long long fiv_perf_now_ns(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (long long)ts.tv_sec * 1000000000LL + ts.tv_nsec;
-}
+#include "fiv_common.h"   /* fiv_get_current_system_time (returns ms as ivf64) */
 
 
 /* Build a tightly-packed random RGB image (FIV_8U3). */
@@ -80,25 +72,25 @@ int main(int argc, char** argv) {
 
     /* ---- scalar baseline ---- */
     {
-        long long t0 = fiv_perf_now_ns();
+        double t0 = fiv_get_current_system_time();
         int i;
         for (i = 0; i < iters; i++) {
             fiv_cs_to_gray_scalar(g_scalar, rgb, 0, 1, 2);
         }
-        long long t1 = fiv_perf_now_ns();
-        double us = (double)(t1 - t0) / iters / 1000.0;
+        double t1 = fiv_get_current_system_time();
+        double us = (t1 - t0) / iters * 1000.0;
         printf("  scalar  : %8.2f us/iter\n", us);
     }
 
     /* ---- SIMD path (via public convertor; dispatches to AVX2/SSE/NEON) ---- */
     {
-        long long t0 = fiv_perf_now_ns();
+        double t0 = fiv_get_current_system_time();
         int i;
         for (i = 0; i < iters; i++) {
             fiv_image_color_space_convertor(g_simd, rgb, FIV_CS_RGB2GRAY);
         }
-        long long t1 = fiv_perf_now_ns();
-        double us = (double)(t1 - t0) / iters / 1000.0;
+        double t1 = fiv_get_current_system_time();
+        double us = (t1 - t0) / iters * 1000.0;
         printf("  simd    : %8.2f us/iter\n", us);
     }
 
@@ -138,20 +130,20 @@ int main(int argc, char** argv) {
         if (rgb_sw == NULL || bgr_simd == NULL || bgr_scalar == NULL) {
             printf("FAIL: swap alloc error\n"); pass = 0; goto cleanup;
         }
-        long long t0, t1; double us;
+        double t0, t1, us;
         int i;
 
-        t0 = fiv_perf_now_ns();
+        t0 = fiv_get_current_system_time();
         for (i = 0; i < iters; i++) fiv_cs_swap_rb_scalar(bgr_scalar, rgb_sw);
-        t1 = fiv_perf_now_ns();
-        us = (double)(t1 - t0) / iters / 1000.0;
+        t1 = fiv_get_current_system_time();
+        us = (t1 - t0) / iters * 1000.0;
         printf("  swap scalar: %8.2f us/iter\n", us);
 
-        t0 = fiv_perf_now_ns();
+        t0 = fiv_get_current_system_time();
         for (i = 0; i < iters; i++)
             fiv_image_color_space_convertor(bgr_simd, rgb_sw, FIV_CS_RGB2BGR);
-        t1 = fiv_perf_now_ns();
-        us = (double)(t1 - t0) / iters / 1000.0;
+        t1 = fiv_get_current_system_time();
+        us = (t1 - t0) / iters * 1000.0;
         printf("  swap simd  : %8.2f us/iter\n", us);
 
         size_t n = (size_t)height * width * 3;

@@ -16,6 +16,7 @@
 
 #include "fiv_face.h"
 #include "fiv_image.h"   /* fiv_create_image_from_file / fiv_release_image */
+#include "fiv_common.h"  /* fiv_get_current_system_time */
 
 #include <math.h>
 #include <stdio.h>
@@ -36,6 +37,51 @@ static void check(int cond, const char* msg) {
 
 static int nearly_equal(float a, float b, float tol) {
     return fabsf(a - b) <= tol;
+}
+
+/* draw helpers copied from test_landmark_e2e.c */
+static void draw_point(fiv_mat* img, ivf32 nx, ivf32 ny, int r, iv8u cr, iv8u cg, iv8u cb) {
+    int iw = (int)img->width, ih = (int)img->height;
+    int cx = (int)(nx * (ivf32)iw);
+    int cy = (int)(ny * (ivf32)ih);
+    iv8u* p = img->data.ptr8u;
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int x = cx + dx, y = cy + dy;
+            if (x < 0 || x >= iw || y < 0 || y >= ih) continue;
+            size_t o = ((size_t)y * (size_t)iw + (size_t)x) * 3;
+            p[o + 0] = cr; p[o + 1] = cg; p[o + 2] = cb;
+        }
+    }
+}
+
+static void draw_seg(fiv_mat* img, int x0, int y0, int x1, int y1,
+                     int thick, iv8u cr, iv8u cg, iv8u cb) {
+    int iw = (int)img->width, ih = (int)img->height;
+    iv8u* p = img->data.ptr8u;
+    if (x0 < 0) x0 = 0; if (x0 >= iw) x0 = iw - 1;
+    if (x1 < 0) x1 = 0; if (x1 >= iw) x1 = iw - 1;
+    if (y0 < 0) y0 = 0; if (y0 >= ih) y0 = ih - 1;
+    if (y1 < 0) y1 = 0; if (y1 >= ih) y1 = ih - 1;
+    int dx = abs(x1 - x0), dy = -abs(y1 - y0);
+    int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    for (int ox = -thick / 2; ox <= thick / 2; ox++) {
+        for (int oy = -thick / 2; oy <= thick / 2; oy++) {
+            int x = x0, y = y0, e2 = err;
+            for (;;) {
+                int xx = x + ox, yy = y + oy;
+                if (xx >= 0 && xx < iw && yy >= 0 && yy < ih) {
+                    size_t o = ((size_t)yy * (size_t)iw + (size_t)xx) * 3;
+                    p[o + 0] = cr; p[o + 1] = cg; p[o + 2] = cb;
+                }
+                if (x == x1 && y == y1) break;
+                e2 = 2 * err;
+                if (e2 >= dy) { err += dy; x += sx; }
+                if (e2 <= dx) { err += dx; y += sy; }
+            }
+        }
+    }
 }
 
 /* validate one detection against the API contract (no reference needed) */
@@ -59,7 +105,9 @@ int main(int argc, char** argv) {
         : "../app/face/models/blazeface_weights.bin";
 
     /* load the source image through the public image API */
+    double t_image_load = fiv_get_current_system_time();
     fiv_mat* image = fiv_create_image_from_file((char*)img_path, FIV_RGB24_CS);
+    t_image_load = fiv_get_current_system_time() - t_image_load;
     check(image != NULL, "fiv_create_image_from_file returns non-NULL");
     if (!image) {
         printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
@@ -69,7 +117,9 @@ int main(int argc, char** argv) {
     int img_h = (int)image->height;
 
     /* ---- interface 1: create ---- */
+    double t_create = fiv_get_current_system_time();
     void* detector = fiv_create_face_detetor((char*)model_path);
+    t_create = fiv_get_current_system_time() - t_create;
     check(detector != NULL, "fiv_create_face_detetor returns non-NULL");
     if (!detector) {
         fiv_release_image(image);
@@ -88,7 +138,9 @@ int main(int argc, char** argv) {
     /* ---- interface 2: run on image ---- */
     fiv_face_result result;
     memset(&result, 0, sizeof(result));
+    double t_detect = fiv_get_current_system_time();
     fiv_ret r = fiv_face_detector_on_image(&result, image, detector);
+    t_detect = fiv_get_current_system_time() - t_detect;
     check(r == FIV_RET_OK, "fiv_face_detector_on_image returns FIV_RET_OK");
     check(result.count >= 0 && result.count <= FIV_FACE_MAX_DETS,
           "count within [0, FIV_FACE_MAX_DETS]");
@@ -126,6 +178,22 @@ int main(int argc, char** argv) {
     }
     check(det_match, "deterministic per-detection output");
 
+    /* ---- steady-state detect timing: N iterations, time ONLY on_image ---- */
+    const int bench_n = 200;
+    double tiref = 0.0;                 /* sum of on_image durations only */
+    double tlw = 0.0;                   /* whole-loop wall time (incl. loop) */
+    double ta = fiv_get_current_system_time();
+    fiv_face_result br;
+    for (int bi = 0; bi < bench_n; bi++) {
+        memset(&br, 0, sizeof(br));
+        double ts = fiv_get_current_system_time();
+        fiv_face_detector_on_image(&br, image, detector);
+        tiref += fiv_get_current_system_time() - ts;
+    }
+    tlw = fiv_get_current_system_time() - ta;
+    printf("detect_bench: %d iters  wall=%.3f ms  avg_on_image=%.3f ms/frame  %.1f FPS\n",
+           bench_n, tlw, tiref / bench_n, 1000.0 * bench_n / tiref);
+
     /* ---- interface 3: release ---- */
     fiv_ret rr = fiv_release_face_detector(&detector);
     check(rr == FIV_RET_OK, "fiv_release_face_detector returns FIV_RET_OK");
@@ -135,9 +203,31 @@ int main(int argc, char** argv) {
     check(fiv_release_face_detector(&detector) != FIV_RET_OK ||
           detector == NULL, "release(NULL) guarded");
 
+    /* ---- draw detections on the image and save (after bench, image is
+       the clean source used by detection above) ---- */
+    for (int i = 0; i < result.count; i++) {
+        const fiv_face_detection* d = &result.detections[i];
+        int x0 = (int)d->x, y0 = (int)d->y;
+        int x1 = (int)(d->x + d->w), y1 = (int)(d->y + d->h);
+        draw_seg(image, x0, y0, x1, y0, 2, 0, 255, 0);
+        draw_seg(image, x1, y0, x1, y1, 2, 0, 255, 0);
+        draw_seg(image, x1, y1, x0, y1, 2, 0, 255, 0);
+        draw_seg(image, x0, y1, x0, y0, 2, 0, 255, 0);
+        for (int k = 0; k < FIV_FACE_KEYPOINTS; k++)
+            draw_point(image, d->kps[k][0], d->kps[k][1], 3, 255, 0, 0);
+    }
+    {
+        char out_name[] = "blazeface_15_detect.png";
+        fiv_ret wr = fiv_image_write(out_name, image);
+        if (wr == FIV_RET_OK)
+            printf("  saved annotated image -> %s\n", out_name);
+    }
+
     /* release the loaded image through the public image API */
     fiv_release_image(image);
 
+    printf("timing: image_load=%.3f ms  detector_create=%.3f ms  detect(on_image)=%.3f ms\n",
+           t_image_load, t_create, t_detect);
     printf("PASS=%d FAIL=%d\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;
 }

@@ -119,8 +119,12 @@ fiv_ret fiv_image_filter(fiv_mat* dst, fiv_mat* src, fiv_image_filter_type filte
  * See fiv_image_gaussion_blur.h for details. */
 fiv_ret fiv_image_gaussian_blur_precise(fiv_mat* dst, fiv_mat* src, ivf32 sigma, int size);
 
+typedef FIV_ENUM(iv32u){
+  FIV_NN_RESIZER,
+  FIV_BILEAR_RESIZER,
+}fiv_resizer_type;
 
-
+fiv_ret fiv_image_resize(fiv_mat* dst, fiv_mat* src, fiv_resizer_type type);
 
 #ifdef __cplusplus
 }

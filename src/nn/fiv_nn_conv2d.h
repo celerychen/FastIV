@@ -20,6 +20,25 @@
 extern "C" {
 #endif
 
+/* Shared AVX2 stride-2 deinterleave primitives, used by the 3x3 / 5x5 / 2x2
+   stride-2 plane kernels. even() picks the even columns of a 16-wide window
+   [o..o+16), odd() the odd columns; each stride-2 horizontal tap is such a pick
+   of a window shifted by 0/1/2 columns. Defined once here (single source). */
+#if defined(FIV_USE_AVX2)
+static inline __m256 fiv_s2_tap_even(__m256 lo, __m256 hi)
+{
+    __m256 t0 = _mm256_permute2f128_ps(lo, hi, 0x20);  /* [lo.low | hi.low ] */
+    __m256 t1 = _mm256_permute2f128_ps(lo, hi, 0x31);  /* [lo.high| hi.high] */
+    return _mm256_shuffle_ps(t0, t1, 0x88);            /* even-column pick   */
+}
+static __m256 fiv_s2_tap_odd(__m256 lo, __m256 hi)
+{
+    __m256 t0 = _mm256_permute2f128_ps(lo, hi, 0x20);
+    __m256 t1 = _mm256_permute2f128_ps(lo, hi, 0x31);
+    return _mm256_shuffle_ps(t0, t1, 0xDD);            /* odd-column pick    */
+}
+#endif
+
 /* conv2d_method values (see fiv_conv2d_params.conv2d_method). */
 enum {
     FIV_CONV2D_STD = 0,        /* dense: out[oc] = sum_ic conv(src[ic], w[oc][ic]) */

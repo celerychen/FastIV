@@ -33,6 +33,11 @@ typedef enum {
     FIV_NN_NODE_MAX2D,
     FIV_NN_NODE_ADD,
     FIV_NN_NODE_PAD,
+    FIV_NN_NODE_UPSAMPLE2X,   /* nearest-neighbor x2 upsample (FPN lateral) */
+    FIV_NN_NODE_SIGMOID,      /* element-wise sigmoid activation */
+    FIV_NN_NODE_PRELU,        /* parametric ReLU (per-channel learned slope) */
+    FIV_NN_NODE_CONCAT,       /* concatenate multiple tensors along `axis` (multi-input) */
+    FIV_NN_NODE_SPATIAL_PAD,  /* constant(spatial) zero-pad HxW with explicit margins */
     FIV_NN_NODE_TYPE_NUM
 } fiv_nn_node_type;
 
@@ -63,6 +68,35 @@ typedef struct{
 typedef struct {
     int output_channels;
 } fiv_pad_node_params;
+
+/* PReLU (parametric ReLU) params: applies alpha[c] * x for x < 0 per channel,
+   identity for x >= 0. channels must equal the tensor's channel count. alpha is
+   an optional per-channel slope array (copied by the op); NULL initialises to
+   0.25. Used as the FaceMesh landmark backbone activation. */
+typedef struct {
+    int          channels;  /* number of per-channel slopes = input channels */
+    const ivf32* alpha;     /* optional initial slopes; NULL -> init 0.25f */
+} fiv_prelu_node_params;
+
+/* CONCAT params: concatenates the (NCHW) input tensors along `axis`. For the
+   FaceMesh landmark net the concat axis is the channel dim (NCHW axis=1), but
+   any valid axis is supported. output_channels is the accumulated channel count
+   of all inputs (used to size the output and validated per forward). */
+typedef struct {
+    int axis;             /* concat axis, NCHW (default 1 = channels) */
+    int output_channels;  /* sum of all inputs' channel counts */
+} fiv_concat_node_params;
+
+/* Spatial-pad params: NCHW, inserts `value` (default 0) along the H/W borders
+   by the symmetric amounts pad_top/pad_bottom/pad_left/pad_right, extending the
+   tensor spatially (unlike fiv_pad_node_params which pads channels). */
+typedef struct {
+    int   pad_top;
+    int   pad_bottom;
+    int   pad_left;
+    int   pad_right;
+    ivf32 value;  /* fill value for padded cells (default 0) */
+} fiv_spatial_pad_node_params;
 
 
 

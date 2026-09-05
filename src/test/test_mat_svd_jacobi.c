@@ -21,13 +21,13 @@
  * and the error paths. */
 
 #include "fiv_matrix.h"
-#include "fiv_mat_svd_backends.h"
+#include "fiv_mat_svd.h"
+#include "fiv_common.h"   /* fiv_get_current_system_time */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <time.h>
 
 static int g_fail = 0;
 static int g_pass = 0;
@@ -209,9 +209,9 @@ static void run_case(int mrows, int ncols, int rank_def, int with_vecs, int do_t
     ref_svd_values(mat_a->data.fl, mrows, ncols, sing_ref);
 
     ivf32* sing = (ivf32*)malloc(sizeof(ivf32) * dim);
-    clock_t time0 = clock();
+    double time0 = fiv_get_current_system_time();
     const fiv_ret ret = fiv_matrix_svd_jacobi(mat_a, sing, mat_u, mat_v);
-    clock_t time1 = clock();
+    double time1 = fiv_get_current_system_time();
     CHECK(ret == FIV_RET_OK, name);
     if (ret != FIV_RET_OK) goto out_free;
 
@@ -226,7 +226,7 @@ static void run_case(int mrows, int ncols, int rank_def, int with_vecs, int do_t
     }
 
     if (do_timing) {
-        printf("  [perf] %s: %.3fs\n", name, (double)(time1 - time0) / CLOCKS_PER_SEC);
+        printf("  [perf] %s: %.3fs\n", name, (time1 - time0) / 1000.0);
     }
 
     /* descending, non-negative */
