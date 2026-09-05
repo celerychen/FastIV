@@ -55,7 +55,7 @@
 #if defined(FIV_USE_AVX)
 FIV_INLINE ivf64 fiv_mm_hsum_pd_sse3(__m128d v)
 {
-    __m128d shuf = _mm_movehdup_pd(v);
+    __m128d shuf = _mm_unpackhi_pd(v, v); /* {v1, v1}: _mm_movehdup_pd is not in GCC */
     __m128d sums = _mm_add_pd(v, shuf);
     return _mm_cvtsd_f64(sums);
 }

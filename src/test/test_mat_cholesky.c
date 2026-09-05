@@ -18,12 +18,12 @@
 
 #include "fiv_matrix.h"
 #include "fiv_linalg_kernels.h"
+#include "fiv_common.h"   /* fiv_get_current_system_time */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <time.h>
 
 static int g_fail = 0;
 static int g_pass = 0;
@@ -123,14 +123,14 @@ static void run_case(int lower, int n, int do_timing)
 
     CHECK(ref_potrf_lower(a_d, n, ref) == 0, "gen SPD is PD");
 
-    clock_t t0 = clock();
+    double t0 = fiv_get_current_system_time();
     fiv_ret ret = fiv_matrix_cholesky(M, lower);
-    clock_t t1 = clock();
+    double t1 = fiv_get_current_system_time();
     CHECK(ret == FIV_RET_OK, name);
     if (ret != FIV_RET_OK) goto out;
 
     if (do_timing && n >= 500) {
-        double secs = (double)(t1 - t0) / CLOCKS_PER_SEC;
+        double secs = (t1 - t0) / 1000.0;
         double gflops = ((double)n * n * n / 3.0) / secs / 1e9;
         printf("  [perf] %s: %.3fs -> %.2f GFLOPS\n", name, secs, gflops);
     }

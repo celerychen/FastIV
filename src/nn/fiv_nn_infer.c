@@ -12,7 +12,6 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 
 #include "fiv_nn.h"
 #include "fiv_nn_infer.h"
@@ -24,34 +23,43 @@
 #include "fiv_max_2d.h"
 #include "fiv_add_node.h"
 #include "fiv_pad_node.h"
+#include "fiv_upsample_node.h"
+#include "fiv_sigmoid_node.h"
+#include "fiv_prelu_node.h"
+#include "fiv_concat_node.h"
+#include "fiv_spatial_pad_node.h"
 #include "fiv_matrix.h"
 #include "fiv_common.h"
 
-/* Per-node-type forward timing (engine-internal). fiv_bench_on gates the
-   clock_gettime calls so the normal (disabled) inference path stays branch-free. */
-static int fiv_bench_on = 0;
+#if FIV_NN_TIMING
+/* Single runtime gate + file-local benchmark accumulators. They live here (not
+   in fiv_nn_network_context) because the timing is a compile-time diagnostic
+   only, fully removed when FIV_NN_TIMING is 0. */
+static int          fiv_bench_on = 0;
+static ivf64        fiv_bench_ms[FIV_NN_NODE_TYPE_NUM];
 
 void fiv_nn_bench_enable(void* nn)
 {
+    (void)nn;
     fiv_bench_on = 1;
-    fiv_nn_network_context* net = (fiv_nn_network_context*)nn;
-    for (int t = 0; t < FIV_NN_NODE_TYPE_NUM; t++) net->bench_ms[t] = 0.0;
+    for (int t = 0; t < FIV_NN_NODE_TYPE_NUM; t++) fiv_bench_ms[t] = 0.0;
 }
 
-void fiv_nn_get_bench(void* nn, double* out_by_type, int n)
+void fiv_nn_get_bench(void* nn, ivf64* out_by_type, int n)
 {
-    fiv_nn_network_context* net = (fiv_nn_network_context*)nn;
+    (void)nn;
     int m = (n < FIV_NN_NODE_TYPE_NUM) ? n : FIV_NN_NODE_TYPE_NUM;
-    for (int t = 0; t < m; t++) out_by_type[t] = net->bench_ms[t];
+    for (int t = 0; t < m; t++) out_by_type[t] = fiv_bench_ms[t];
     for (int t = m; t < n; t++) out_by_type[t] = 0.0;
 }
+#endif
 
 void* fiv_create_neural_network()
 {
     fiv_nn_network_context* net = (fiv_nn_network_context*)fiv_malloc(sizeof(fiv_nn_network_context));
     if (!net) return NULL;
 
-    net->capacity = 16;
+    net->capacity = 256;
     net->nodes = (fiv_nn_node_context*)fiv_calloc((size_t)net->capacity, sizeof(fiv_nn_node_context));
     if (!net->nodes) { fiv_free(net); return NULL; }
     net->topo_order = (int*)fiv_malloc(sizeof(int) * (size_t)net->capacity);
@@ -85,8 +93,62 @@ static void* fiv_nn_make_op(int node_type, void* params)
     case FIV_NN_NODE_MAX2D:      return fiv_max_2d_node_create(params);
     case FIV_NN_NODE_ADD:        return fiv_add_node_create(params);
     case FIV_NN_NODE_PAD:        return fiv_pad_node_create(params);
+    case FIV_NN_NODE_UPSAMPLE2X: return fiv_upsample_node_create(params);
+    case FIV_NN_NODE_SIGMOID:    return fiv_sigmoid_node_create(params);
+    case FIV_NN_NODE_PRELU:      return fiv_prelu_node_create(params);
+    case FIV_NN_NODE_CONCAT:     return fiv_concat_node_create(params);
+    case FIV_NN_NODE_SPATIAL_PAD:return fiv_spatial_pad_node_create(params);
     default:                     return NULL;
     }
+}
+
+fiv_nn_node_context* fiv_neural_network_get_node(void* net_context, int node_id)
+{
+    fiv_nn_network_context* net = (fiv_nn_network_context*)net_context;
+    if (!net) return NULL;
+    if (node_id < 0 || node_id >= net->node_count) return NULL;
+    return &net->nodes[node_id];
+}
+
+void* fiv_neural_network_get_node_output(void* net_context, int node_id)
+{
+    fiv_nn_network_context* net = (fiv_nn_network_context*)net_context;
+    if (!net) return NULL;
+    if (node_id < 0 || node_id >= net->node_count) return NULL;
+    return net->nodes[node_id].output;
+}
+
+static int fiv_nn_is_conv_node(int node_type)
+{
+    return node_type == FIV_NN_NODE_CONV2D_STD ||
+           node_type == FIV_NN_NODE_CONV2D_DEPTHWISE ||
+           node_type == FIV_NN_NODE_CONV2D_POINTWISE;
+}
+
+fiv_ret fiv_neural_network_set_node_weight(void* net_context, int node_id, const float* weight_data)
+{
+    fiv_nn_network_context* net = (fiv_nn_network_context*)net_context;
+    if (!net || !weight_data || node_id <= 0 || node_id >= net->node_count) return FIV_RET_ERR_PARA;
+    fiv_nn_node_context* nd = &net->nodes[node_id];
+    if (!fiv_nn_is_conv_node(nd->node_type)) return FIV_RET_ERR_NOT_SUPPORT;
+    fiv_conv2d_node* conv = (fiv_conv2d_node*)nd->op;
+    if (!conv || !conv->weight || !conv->weight->data.fl) return FIV_RET_ERR_PARA;
+    size_t count = conv->weight->total_bytes / sizeof(ivf32);
+    memcpy(conv->weight->data.fl, weight_data, count * sizeof(ivf32));
+    return FIV_RET_OK;
+}
+
+fiv_ret fiv_neural_network_set_node_bias(void* net_context, int node_id, const float* bias_data)
+{
+    fiv_nn_network_context* net = (fiv_nn_network_context*)net_context;
+    if (!net || !bias_data || node_id <= 0 || node_id >= net->node_count) return FIV_RET_ERR_PARA;
+    fiv_nn_node_context* nd = &net->nodes[node_id];
+    if (!fiv_nn_is_conv_node(nd->node_type)) return FIV_RET_ERR_NOT_SUPPORT;
+    fiv_conv2d_node* conv = (fiv_conv2d_node*)nd->op;
+    if (!conv || !conv->bias || !conv->bias->data.fl) return FIV_RET_ERR_PARA;
+    size_t count = conv->bias->total_bytes / sizeof(ivf32);
+    memcpy(conv->bias->data.fl, bias_data, count * sizeof(ivf32));
+    return FIV_RET_OK;
 }
 
 static fiv_ret fiv_nn_add_node_impl(fiv_nn_network_context* net, int node_type,
@@ -300,27 +362,25 @@ static fiv_ret fiv_nn_pass2_inference(fiv_nn_network_context* net)
         fiv_nn_op_base* o = (fiv_nn_op_base*)nd->op;
         if (!o) return FIV_RET_ERR_DATA_UNINITED;
         fiv_ret r;
-        if (fiv_bench_on) {
-            struct timespec _t0, _t1;
-            clock_gettime(CLOCK_MONOTONIC, &_t0);
-            if (nd->num_src > 1 && o->inference_multi_fn)
-                r = o->inference_multi_fn(nd->op, nd->output, nd->inputs, nd->num_src);
-            else {
-                if (!o->inference_fn) return FIV_RET_ERR_DATA_UNINITED;
-                r = o->inference_fn(nd->op, nd->output, nd->input);
-            }
-            clock_gettime(CLOCK_MONOTONIC, &_t1);
-            net->bench_ms[nd->node_type] +=
-                (double)(_t1.tv_sec - _t0.tv_sec) * 1000.0 +
-                (double)(_t1.tv_nsec - _t0.tv_nsec) / 1e6;
-        } else {
-            if (nd->num_src > 1 && o->inference_multi_fn)
-                r = o->inference_multi_fn(nd->op, nd->output, nd->inputs, nd->num_src);
-            else {
-                if (!o->inference_fn) return FIV_RET_ERR_DATA_UNINITED;
-                r = o->inference_fn(nd->op, nd->output, nd->input);
-            }
+#if FIV_NN_TIMING
+        ivf64 _t0 = 0.0;
+        if (fiv_bench_on) _t0 = fiv_get_current_system_time();
+#endif
+        if (nd->num_src > 1 && o->inference_multi_fn)
+            r = o->inference_multi_fn(nd->op, nd->output, nd->inputs, nd->num_src);
+        else {
+            if (!o->inference_fn) return FIV_RET_ERR_DATA_UNINITED;
+            r = o->inference_fn(nd->op, nd->output, nd->input);
         }
+        if (r != FIV_RET_OK) return r;
+#if FIV_NN_TIMING
+        /* Clamp the node-type index so no value can ever write out of bounds. */
+        if (fiv_bench_on) {
+            int bt = nd->node_type;
+            if (bt < 0 || bt >= FIV_NN_NODE_TYPE_NUM) bt = FIV_NN_NODE_INPUT;
+            fiv_bench_ms[bt] += fiv_get_current_system_time() - _t0;
+        }
+#endif
         if (r != FIV_RET_OK) return r;
     }
     return FIV_RET_OK;
@@ -365,8 +425,10 @@ fiv_ret fiv_nn_run_inference(fiv_nn_network_context* net, void* input, void** fi
         fiv_ret r = fiv_nn_topo_sort(net);
         if (r != FIV_RET_OK) return r;
     }
+#if FIV_NN_TIMING
     if (fiv_bench_on)
-        for (int t = 0; t < FIV_NN_NODE_TYPE_NUM; t++) net->bench_ms[t] = 0.0;
+        for (int t = 0; t < FIV_NN_NODE_TYPE_NUM; t++) fiv_bench_ms[t] = 0.0;
+#endif
     net->nodes[0].output = input;   /* node 0 aliases the caller input */
     fiv_ret r;
     if (!net->infer_allocated) {

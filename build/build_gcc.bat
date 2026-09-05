@@ -5,7 +5,7 @@ REM
 REM macOS / Linux use build/Makefile instead.
 REM Layout:
 REM   public headers : api/*.h
-REM   implementations: src/ctensor/*.c
+REM   implementations: src/ctensor/*.c, src/mat/*.c, src/math/*.c
 REM   tests          : src/test/*.c
 REM   intermediates  : obj/*.o
 REM   executables    : build/*.exe
@@ -15,7 +15,9 @@ set API=%DDIR%..\api
 set SRC=%DDIR%..\src
 set CT=%SRC%\ctensor
 set MAT=%SRC%\mat
+set MATH=%SRC%\math
 set TEST=%SRC%\test
+set REF=%SRC%\reference\c_face_detect_release\c
 set OBJ=%DDIR%..\obj
 set BIN=%DDIR%
 
@@ -43,10 +45,26 @@ echo [GCC] compiling objects...
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_nn_infer.c"        -o "%OBJ%\fiv_nn_infer.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_nn_train.c"        -o "%OBJ%\fiv_nn_train.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_nn_conv2d.c"  -o "%OBJ%\fiv_nn_conv2d.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_nn_2x2_conv2d.c" -o "%OBJ%\fiv_nn_2x2_conv2d.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_nn_3x3_conv2d.c" -o "%OBJ%\fiv_nn_3x3_conv2d.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_nn_5x5_conv2d.c" -o "%OBJ%\fiv_nn_5x5_conv2d.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_nn_1x1_conv2d.c" -o "%OBJ%\fiv_nn_1x1_conv2d.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_flatten_node.c"  -o "%OBJ%\fiv_flatten_node.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_max_2d.c"  -o "%OBJ%\fiv_max_2d.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_add_node.c"  -o "%OBJ%\fiv_add_node.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_pad_node.c"  -o "%OBJ%\fiv_pad_node.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_upsample_node.c" -o "%OBJ%\fiv_upsample_node.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_sigmoid_node.c"  -o "%OBJ%\fiv_sigmoid_node.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_prelu_node.c"    -o "%OBJ%\fiv_prelu_node.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_concat_node.c"   -o "%OBJ%\fiv_concat_node.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%NN%\fiv_spatial_pad_node.c" -o "%OBJ%\fiv_spatial_pad_node.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -I "%MAT%" -c "%MAT%\fiv_mat_mul_db.c" -o "%OBJ%\fiv_mat_mul_db.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -I "%MAT%" -c "%MAT%\fiv_mat_vec_db.c" -o "%OBJ%\fiv_mat_vec_db.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -I "%MAT%" -c "%MAT%\fiv_mat_reduce_db.c" -o "%OBJ%\fiv_mat_reduce_db.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math.c"          -o "%OBJ%\fiv_math.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math_sigmoid.c"  -o "%OBJ%\fiv_math_sigmoid.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math_softmax.c"  -o "%OBJ%\fiv_math_softmax.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math_swiglu.c"   -o "%OBJ%\fiv_math_swiglu.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%TEST%\test_darray.c"  -o "%OBJ%\test_darray.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%TEST%\test_ctensor.c" -o "%OBJ%\test_ctensor.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%TEST%\test_mat_transpose.c" -o "%OBJ%\test_mat_transpose.o"
@@ -70,28 +88,28 @@ echo [GCC] linking test_mat_transpose...
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_transpose.o" "%OBJ%\fiv_mat_transpose.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_transpose.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_mat_vec...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_vec.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_vec.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_vec.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_vec_db.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_reduce_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_vec.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_mat_mul...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_mul.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_mul.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_mul.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_mat_mul_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -o "%BIN%\test_mat_mul.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_mat_cholesky...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_cholesky.o" "%OBJ%\fiv_mat_cholesky.o" "%OBJ%\fiv_linalg_kernels.o" "%OBJ%\fiv_mat_transpose.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_mat_cholesky.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_cholesky.o" "%OBJ%\fiv_mat_cholesky.o" "%OBJ%\fiv_linalg_kernels.o" "%OBJ%\fiv_mat_transpose.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_mat_mul_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_mat_cholesky.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_mat_lu...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_lu.o" "%OBJ%\fiv_mat_lu.o" "%OBJ%\fiv_linalg_kernels.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_mat_lu.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_mat_lu.o" "%OBJ%\fiv_mat_lu.o" "%OBJ%\fiv_linalg_kernels.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_mat_mul_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_mat_lu.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_nn...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_nn_2x2_conv2d.o" "%OBJ%\fiv_nn_3x3_conv2d.o" "%OBJ%\fiv_nn_5x5_conv2d.o" "%OBJ%\fiv_nn_1x1_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_upsample_node.o" "%OBJ%\fiv_sigmoid_node.o" "%OBJ%\fiv_prelu_node.o" "%OBJ%\fiv_concat_node.o" "%OBJ%\fiv_spatial_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_vec_db.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_reduce_db.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_mat_mul_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_nn_mnist...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn_mnist.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_mnist.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn_mnist.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_nn_2x2_conv2d.o" "%OBJ%\fiv_nn_3x3_conv2d.o" "%OBJ%\fiv_nn_5x5_conv2d.o" "%OBJ%\fiv_nn_1x1_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_upsample_node.o" "%OBJ%\fiv_sigmoid_node.o" "%OBJ%\fiv_prelu_node.o" "%OBJ%\fiv_concat_node.o" "%OBJ%\fiv_spatial_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_vec_db.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_reduce_db.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_mat_mul_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_mnist.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_nn_mnist_conv...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn_mnist_conv.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_mnist_conv.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn_mnist_conv.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_nn_2x2_conv2d.o" "%OBJ%\fiv_nn_3x3_conv2d.o" "%OBJ%\fiv_nn_5x5_conv2d.o" "%OBJ%\fiv_nn_1x1_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_upsample_node.o" "%OBJ%\fiv_sigmoid_node.o" "%OBJ%\fiv_prelu_node.o" "%OBJ%\fiv_concat_node.o" "%OBJ%\fiv_spatial_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_vec_db.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_reduce_db.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_mat_mul_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_mnist_conv.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] linking test_nn_conv2d...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn_conv2d.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_conv2d.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_nn_conv2d.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_nn_2x2_conv2d.o" "%OBJ%\fiv_nn_3x3_conv2d.o" "%OBJ%\fiv_nn_5x5_conv2d.o" "%OBJ%\fiv_nn_1x1_conv2d.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_nn_conv2d.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] compiling reference (BlazeFace golden) objects...
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%REF%" -c "%REF%\weights.c" -o "%OBJ%\ref_weights.o"
@@ -101,7 +119,7 @@ echo [GCC] compiling reference (BlazeFace golden) objects...
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -I "%NN%" -I "%REF%" -c "%TEST%\test_blazeface.c" -o "%OBJ%\test_blazeface.o"
 if errorlevel 1 (echo GCC compile FAILED & exit /b 1)
 echo [GCC] linking test_blazeface...
-%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_blazeface.o" "%OBJ%\ref_weights.o" "%OBJ%\ref_geom.o" "%OBJ%\ref_cnn_ops.o" "%OBJ%\ref_detect.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_blazeface.exe"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma "%OBJ%\test_blazeface.o" "%OBJ%\ref_weights.o" "%OBJ%\ref_geom.o" "%OBJ%\ref_cnn_ops.o" "%OBJ%\ref_detect.o" "%OBJ%\fiv_nn_infer.o" "%OBJ%\fiv_nn_topo.o" "%OBJ%\fiv_nn_train.o" "%OBJ%\fiv_linear_node.o" "%OBJ%\fiv_activate_fn.o" "%OBJ%\fiv_nn_conv2d.o" "%OBJ%\fiv_nn_2x2_conv2d.o" "%OBJ%\fiv_nn_3x3_conv2d.o" "%OBJ%\fiv_nn_5x5_conv2d.o" "%OBJ%\fiv_nn_1x1_conv2d.o" "%OBJ%\fiv_flatten_node.o" "%OBJ%\fiv_max_2d.o" "%OBJ%\fiv_add_node.o" "%OBJ%\fiv_pad_node.o" "%OBJ%\fiv_upsample_node.o" "%OBJ%\fiv_sigmoid_node.o" "%OBJ%\fiv_prelu_node.o" "%OBJ%\fiv_concat_node.o" "%OBJ%\fiv_spatial_pad_node.o" "%OBJ%\fiv_mat_vec.o" "%OBJ%\fiv_mat_vec_db.o" "%OBJ%\fiv_mat_reduce.o" "%OBJ%\fiv_mat_reduce_db.o" "%OBJ%\fiv_mat_mul.o" "%OBJ%\fiv_mat_mul_db.o" "%OBJ%\fiv_ctensor.o" "%OBJ%\fiv_binary_op.o" "%OBJ%\fiv_common.o" -lm -o "%BIN%\test_blazeface.exe"
 if errorlevel 1 (echo link FAILED & exit /b 1)
 echo [GCC] OK -^> %BIN%\test_darray.exe, %BIN%\test_ctensor.exe, %BIN%\test_mat_transpose.exe, %BIN%\test_mat_vec.exe, %BIN%\test_mat_mul.exe, %BIN%\test_mat_cholesky.exe, %BIN%\test_mat_lu.exe, %BIN%\test_nn.exe, %BIN%\test_nn_mnist.exe, %BIN%\test_nn_conv2d.exe, %BIN%\test_nn_mnist_conv.exe, %BIN%\test_blazeface.exe
 goto end

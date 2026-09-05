@@ -9,10 +9,11 @@
  * See LICENSE file in project root for full license text.
  */
 
-/* Internal declarations of the two fiv_matrix_svd backends. NOT part of the
-   public API: public users call fiv_matrix_svd (api/fiv_matrix.h), which
-   dispatches to these. Both share the caller-visible input/output format
-   documented on fiv_matrix_svd and preserve the input matrix.
+/* Header for fiv_mat_svd.c: declares the two singular value decomposition
+   backends implemented in that module. NOT part of the public API: public
+   users call fiv_matrix_svd (api/fiv_matrix.h), which dispatches to these.
+   Both share the caller-visible input/output format documented on
+   fiv_matrix_svd and preserve the input matrix.
 
    fiv_matrix_svd_bcd     - blocked Householder bidiagonalization +
                             Golub-Kahan QR (LAPACK dgesdd lineage); V is
@@ -26,8 +27,8 @@
                             accuracy; prefer for small / ill-conditioned
                             inputs. */
 
-#ifndef _FIV_MAT_SVD_BACKENDS_H_
-#define _FIV_MAT_SVD_BACKENDS_H_
+#ifndef _FIV_MAT_SVD_H_
+#define _FIV_MAT_SVD_H_
 
 #include "fiv_matrix.h"
 
@@ -43,4 +44,4 @@ fiv_ret fiv_matrix_svd_jacobi(fiv_mat* mat_a, ivf32* sing_vals, fiv_mat* mat_u, 
 }
 #endif
 
-#endif  /* _FIV_MAT_SVD_BACKENDS_H_ */
+#endif  /* _FIV_MAT_SVD_H_ */

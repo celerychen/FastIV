@@ -21,12 +21,12 @@
  * with-eigenvectors (n=300). */
 
 #include "fiv_matrix.h"
+#include "fiv_common.h"   /* fiv_get_current_system_time */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <time.h>
 
 static int g_fail = 0;
 static int g_pass = 0;
@@ -195,14 +195,14 @@ static void run_case(int upper_mode, int with_vecs, int dim,
     gen_sym(dim, rank_def, a_d);
     load_matrix(mat_a, a_d, upper_mode);
 
-    clock_t time0 = clock();
+    double time0 = fiv_get_current_system_time();
     const fiv_ret ret = fiv_matrix_eig_sym(mat_a, evals, mat_v, upper_mode);
-    clock_t time1 = clock();
+    double time1 = fiv_get_current_system_time();
     CHECK(ret == FIV_RET_OK, name);
     if (ret != FIV_RET_OK) goto out_free;
 
     if (do_timing) {
-        printf("  [perf] %s: %.3fs\n", name, (double)(time1 - time0) / CLOCKS_PER_SEC);
+        printf("  [perf] %s: %.3fs\n", name, (time1 - time0) / 1000.0);
     }
 
     if (dim <= 300) {

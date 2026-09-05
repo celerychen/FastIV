@@ -56,7 +56,16 @@ void fiv_free(void *p)
 ivf64 fiv_get_current_system_time(void)
 {
 #if defined(_WIN32)
-    LARGE_INTEGER freq, cnt;
+    /* Minimal local declarations: <windows.h> is not included because its
+       __CRT_INLINE headers break in this project's strict -std=c23 mode.
+       On x86-64 Windows these symbols are plain C exports of kernel32. */
+    typedef union {
+        struct { unsigned long LowPart; long HighPart; } u;
+        long long QuadPart;
+    } lm_LARGE_INTEGER;
+    extern int QueryPerformanceFrequency(lm_LARGE_INTEGER*);
+    extern int QueryPerformanceCounter(lm_LARGE_INTEGER*);
+    lm_LARGE_INTEGER freq, cnt;
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&cnt);
     return (ivf64)cnt.QuadPart / (ivf64)freq.QuadPart * 1e3;
