@@ -1,0 +1,1 @@
+{"name": "syn_pool_k5s1p2", "shape": [1, 4, 9, 11], "dtype": "f32", "src": "max_pool2d k=5 s=1 p=2"}

@@ -1,0 +1,1 @@
+{"name": "layer19_C3k2", "shape": [1, 128, 4, 4], "dtype": "f32", "src": "output of model.model[19] (C3k2)"}

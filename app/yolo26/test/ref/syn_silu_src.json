@@ -1,0 +1,1 @@
+{"name": "syn_silu_src", "shape": [1, 8, 5, 7], "dtype": "f32", "src": "random tensor, P1 SILU input"}

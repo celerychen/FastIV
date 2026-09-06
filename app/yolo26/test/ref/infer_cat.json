@@ -1,0 +1,1 @@
+{"name": "infer_cat", "shape": [1, 84, 84], "dtype": "f32", "src": "concat(dbox*stride, scores.sigmoid()) [1,4+nc,A]"}

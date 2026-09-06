@@ -1,0 +1,1 @@
+{"name": "layer11_Upsample_in", "shape": [1, 256, 2, 2], "dtype": "f32", "src": "input fed to model.model[11] (Upsample)"}

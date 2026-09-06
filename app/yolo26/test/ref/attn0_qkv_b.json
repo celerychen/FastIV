@@ -1,0 +1,1 @@
+{"name": "attn0_qkv_b", "shape": [256], "dtype": "f32", "src": "Attention qkv conv BN-folded bias [qkv_ch]"}

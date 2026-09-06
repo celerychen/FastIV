@@ -1,0 +1,1 @@
+{"name": "layer21_Concat", "shape": [1, 384, 2, 2], "dtype": "f32", "src": "output of model.model[21] (Concat)"}

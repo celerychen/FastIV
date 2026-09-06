@@ -1,0 +1,1 @@
+{"name": "anchors", "shape": [2, 84], "dtype": "f32", "src": "make_anchors result [2,A]"}
