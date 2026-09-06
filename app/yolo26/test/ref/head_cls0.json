@@ -1,0 +1,1 @@
+{"name": "head_cls0", "shape": [1, 80, 8, 8], "dtype": "f32", "src": "detect.one2one_cv3[0] output"}

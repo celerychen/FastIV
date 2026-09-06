@@ -1,0 +1,1 @@
+{"name": "layer20_Conv", "shape": [1, 128, 2, 2], "dtype": "f32", "src": "output of model.model[20] (Conv)"}

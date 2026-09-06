@@ -1,0 +1,1 @@
+{"name": "syn_slice_half1", "shape": [1, 6, 4, 5], "dtype": "f32", "src": "slice_src.chunk(2, dim=1)[1]"}

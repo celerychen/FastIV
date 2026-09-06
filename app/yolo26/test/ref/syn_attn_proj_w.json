@@ -1,0 +1,1 @@
+{"name": "syn_attn_proj_w", "shape": [128, 128, 1, 1], "dtype": "f32", "src": "syn Attention proj conv BN-folded weight [dim,dim,1,1]"}

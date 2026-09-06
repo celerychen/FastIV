@@ -1,0 +1,1 @@
+{"name": "attn1_qkv", "shape": [1, 256, 2, 2], "dtype": "f32", "src": "Attention[1] intermediate 'qkv'"}
