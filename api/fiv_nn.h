@@ -38,6 +38,10 @@ typedef enum {
     FIV_NN_NODE_PRELU,        /* parametric ReLU (per-channel learned slope) */
     FIV_NN_NODE_CONCAT,       /* concatenate multiple tensors along `axis` (multi-input) */
     FIV_NN_NODE_SPATIAL_PAD,  /* constant(spatial) zero-pad HxW with explicit margins */
+    FIV_NN_NODE_SILU,        /* element-wise SiLU activation y = x * sigmoid(x) */
+    FIV_NN_NODE_MAXPOOL,     /* general 2D max-pooling (NCHW, parameterised kernel/stride/pad) */
+    FIV_NN_NODE_SLICE,       /* axis slice [start,end); single-output for C2f/C3k/C2PSA/Attention */
+    FIV_NN_NODE_ATTENTION,   /* composite self-attention (YOLO26 C2PSA / attn=True C3k2); only used for YOLO26 */
     FIV_NN_NODE_TYPE_NUM
 } fiv_nn_node_type;
 

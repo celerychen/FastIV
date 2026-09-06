@@ -13,6 +13,7 @@
 #include "fiv_math_sigmoid.h"
 #include "fiv_math_softmax.h"
 #include "fiv_math_swiglu.h"
+#include "fiv_math_rms_norm.h"
 
 
 /* ==================== Public API (dispatch only) ====================
@@ -55,30 +56,76 @@ fiv_ret fiv_math_sigmoid(fiv_vec* dst, const fiv_vec* src)
 
 /* Softmax reduces along the ROW direction only: each row is normalized
    independently (dim == 0). dst may alias src (in-place). FIV_32F1 goes through
-   the AVX2+FMA kernel when available; FIV_64F1 stays on the scalar path. */
+   the AVX2+FMA kernel when available; FIV_64F1 stays on the scalar path.
+   dst/src strides are honored (strided / non-contiguous matrices accepted). */
 fiv_ret fiv_math_softmax(fiv_mat* dst, const fiv_mat* src)
 {
     if (dst == NULL || src == NULL) return FIV_RET_ERR_PARA;
     if (dst->data.ptr == NULL || src->data.ptr == NULL) return FIV_RET_ERR_PARA;
-    if (dst->data_continue == 0 || src->data_continue == 0) return FIV_RET_ERR_PARA;
     if (dst->dtype != src->dtype) return FIV_RET_ERR_PARA;
     if (src->dtype != FIV_32F1 && src->dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
     if (dst->rows != src->rows || dst->cols != src->cols) return FIV_RET_ERR_PARA;
 
     const size_t rows = src->rows;
     const size_t cols = src->cols;
+    /* strides[] are stored in BYTES; convert to elements-per-row. */
+    const int src_stride = (int)(src->strides[0] / (size_t)src->element_bytes);
+    const int dst_stride = (int)(dst->strides[0] / (size_t)dst->element_bytes);
 
     if (src->dtype == FIV_64F1) {
-        fiv_math_softmax_real64((ivf64*)dst->data.db, (const ivf64*)src->data.db, rows, cols);
+        fiv_math_softmax_real64((ivf64*)dst->data.db, dst_stride,
+                                (const ivf64*)src->data.db, src_stride, rows, cols);
         return FIV_RET_OK;
     }
 
 #if defined(FIV_USE_AVX2)
-    fiv_math_softmax_avx2_ps((ivf32*)dst->data.fl, (const ivf32*)src->data.fl, rows, cols);
+    fiv_math_softmax_avx2_ps((ivf32*)dst->data.fl, dst_stride,
+                             (const ivf32*)src->data.fl, src_stride, rows, cols);
 #else
-    fiv_math_softmax_real32((ivf32*)dst->data.fl, (const ivf32*)src->data.fl, rows, cols);
+    fiv_math_softmax_real32((ivf32*)dst->data.fl, dst_stride,
+                            (const ivf32*)src->data.fl, src_stride, rows, cols);
 #endif
 
+    return FIV_RET_OK;
+}
+
+/* RMSNorm normalizes each row independently: rms_i = sqrt(mean_j(src[i,j]^2) +
+   eps), dst[i,j] = src[i,j] / rms_i * gain[j]. gain is a per-column vector
+   (gain->cols == src->cols) broadcast across rows. dst may alias src
+   (in-place). FIV_32F1 / FIV_64F1; eps is a scalar of the same float dtype as
+   src. dst/src strides are honored (strided / non-contiguous matrices are
+   accepted); gain is read as a flat per-column vector so it must be
+   contiguous. */
+fiv_ret fiv_math_rms_norm(fiv_mat* dst, fiv_mat* src, fiv_mat* gain, fiv_scalar eps)
+{
+    if (dst == NULL || src == NULL || gain == NULL) return FIV_RET_ERR_PARA;
+    if (dst->data.ptr == NULL || src->data.ptr == NULL || gain->data.ptr == NULL) return FIV_RET_ERR_PARA;
+    if (gain->data_continue == 0) return FIV_RET_ERR_PARA;
+    if (dst->dtype != src->dtype || src->dtype != gain->dtype) return FIV_RET_ERR_PARA;
+    if (src->dtype != FIV_32F1 && src->dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
+    if (dst->rows != src->rows || dst->cols != src->cols) return FIV_RET_ERR_PARA;
+    if (gain->cols != src->cols) return FIV_RET_ERR_PARA;
+    if (eps.id != FIV_ID_SCALAR) return FIV_RET_ERR_PARA;
+
+    const size_t rows = src->rows;
+    const size_t cols = src->cols;
+    /* strides[] are stored in BYTES; convert to elements-per-row (matching the
+       lda/ldb/ldc convention of the low-level matrix-multiply interface). */
+    const int src_stride = (int)(src->strides[0] / (size_t)src->element_bytes);
+    const int dst_stride = (int)(dst->strides[0] / (size_t)dst->element_bytes);
+
+    if (src->dtype == FIV_64F1) {
+        if (eps.dtype != FIV_64F1) return FIV_RET_ERR_NOT_SUPPORT;
+        fiv_math_rms_norm_real64((ivf64*)dst->data.db, dst_stride,
+                                 (const ivf64*)src->data.db, src_stride,
+                                 (const ivf64*)gain->data.db, rows, cols, eps.data.value_fp64);
+        return FIV_RET_OK;
+    }
+
+    if (eps.dtype != FIV_32F1) return FIV_RET_ERR_NOT_SUPPORT;
+    fiv_math_rms_norm_real32((ivf32*)dst->data.fl, dst_stride,
+                             (const ivf32*)src->data.fl, src_stride,
+                             (const ivf32*)gain->data.fl, rows, cols, eps.data.value_fp32);
     return FIV_RET_OK;
 }
 

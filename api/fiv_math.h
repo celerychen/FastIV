@@ -55,6 +55,18 @@ fiv_ret fiv_math_swiglu(fiv_vec* dst, const fiv_vec* gate, const fiv_vec* up);
 fiv_ret fiv_math_softmax(fiv_mat* dst, const fiv_mat* src);
 
 
+/* ============================ RMSNorm (row-wise) ============================ */
+/* Root-mean-square layer normalization, applied per row:
+     rms_i = sqrt( mean_j( src[i,j]^2 ) + eps )
+     dst[i,j] = src[i,j] / rms_i * gain[j]
+   The mean is taken over the row's columns only, so every row is normalized
+   independently (the gain is a per-column scale vector of length cols, i.e.
+   gain->cols == src->cols, broadcast across all rows). Float dtype
+   (FIV_32F1 / FIV_64F1), contiguous; dst may alias src (in-place). eps is a
+   scalar of the same float dtype as src. */
+fiv_ret fiv_math_rms_norm(fiv_mat* dst, fiv_mat* src, fiv_mat* gain, fiv_scalar eps);
+
+
 #ifdef __cplusplus
 }
 #endif

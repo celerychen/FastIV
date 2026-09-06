@@ -62,7 +62,14 @@ static const ivf32 fiv_8u_to_32f_n1p1_lut[256] = {
 static void fiv_convert_8u_to_32f(fiv_tensor_hdr* dst, fiv_tensor_hdr* src, size_t n) {
     const iv8u* src_ptr = src->data.ptr8u;
     ivf32*      dst_ptr = dst->data.fl;
-    for (size_t k = 0; k < n; k++) {
+    size_t      k = 0;
+    for (; k + 4 <= n; k += 4) {
+        dst_ptr[k]     = (ivf32)src_ptr[k];
+        dst_ptr[k + 1] = (ivf32)src_ptr[k + 1];
+        dst_ptr[k + 2] = (ivf32)src_ptr[k + 2];
+        dst_ptr[k + 3] = (ivf32)src_ptr[k + 3];
+    }
+    for (; k < n; k++) {
         dst_ptr[k] = (ivf32)src_ptr[k];
     }
 }
@@ -70,7 +77,14 @@ static void fiv_convert_8u_to_32f(fiv_tensor_hdr* dst, fiv_tensor_hdr* src, size
 static void fiv_convert_8u_to_32f_norm01(fiv_tensor_hdr* dst, fiv_tensor_hdr* src, size_t n) {
     const iv8u* src_ptr = src->data.ptr8u;
     ivf32*      dst_ptr = dst->data.fl;
-    for (size_t k = 0; k < n; k++) {
+    size_t      k = 0;
+    for (; k + 4 <= n; k += 4) {
+        dst_ptr[k]     = fiv_8u_to_32f_lut[src_ptr[k]];
+        dst_ptr[k + 1] = fiv_8u_to_32f_lut[src_ptr[k + 1]];
+        dst_ptr[k + 2] = fiv_8u_to_32f_lut[src_ptr[k + 2]];
+        dst_ptr[k + 3] = fiv_8u_to_32f_lut[src_ptr[k + 3]];
+    }
+    for (; k < n; k++) {
         dst_ptr[k] = fiv_8u_to_32f_lut[src_ptr[k]];
     }
 }
@@ -78,7 +92,14 @@ static void fiv_convert_8u_to_32f_norm01(fiv_tensor_hdr* dst, fiv_tensor_hdr* sr
 static void fiv_convert_8u_to_32f_norm_n1p1(fiv_tensor_hdr* dst, fiv_tensor_hdr* src, size_t n) {
     const iv8u* src_ptr = src->data.ptr8u;
     ivf32*      dst_ptr = dst->data.fl;
-    for (size_t k = 0; k < n; k++) {
+    size_t      k = 0;
+    for (; k + 4 <= n; k += 4) {
+        dst_ptr[k]     = fiv_8u_to_32f_n1p1_lut[src_ptr[k]];
+        dst_ptr[k + 1] = fiv_8u_to_32f_n1p1_lut[src_ptr[k + 1]];
+        dst_ptr[k + 2] = fiv_8u_to_32f_n1p1_lut[src_ptr[k + 2]];
+        dst_ptr[k + 3] = fiv_8u_to_32f_n1p1_lut[src_ptr[k + 3]];
+    }
+    for (; k < n; k++) {
         dst_ptr[k] = fiv_8u_to_32f_n1p1_lut[src_ptr[k]];
     }
 }
@@ -86,7 +107,14 @@ static void fiv_convert_8u_to_32f_norm_n1p1(fiv_tensor_hdr* dst, fiv_tensor_hdr*
 static void fiv_convert_32s_to_32f(fiv_tensor_hdr* dst, fiv_tensor_hdr* src, size_t n) {
     const iv32s* src_ptr = src->data.ptr32s;
     ivf32*       dst_ptr = dst->data.fl;
-    for (size_t k = 0; k < n; k++) {
+    size_t       k = 0;
+    for (; k + 4 <= n; k += 4) {
+        dst_ptr[k]     = (ivf32)src_ptr[k];
+        dst_ptr[k + 1] = (ivf32)src_ptr[k + 1];
+        dst_ptr[k + 2] = (ivf32)src_ptr[k + 2];
+        dst_ptr[k + 3] = (ivf32)src_ptr[k + 3];
+    }
+    for (; k < n; k++) {
         dst_ptr[k] = (ivf32)src_ptr[k];
     }
 }

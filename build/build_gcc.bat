@@ -65,6 +65,7 @@ echo [GCC] compiling objects...
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math_sigmoid.c"  -o "%OBJ%\fiv_math_sigmoid.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math_softmax.c"  -o "%OBJ%\fiv_math_softmax.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math_swiglu.c"   -o "%OBJ%\fiv_math_swiglu.o"
+%GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%MATH%\fiv_math_rms_norm.c" -o "%OBJ%\fiv_math_rms_norm.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%TEST%\test_darray.c"  -o "%OBJ%\test_darray.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%TEST%\test_ctensor.c" -o "%OBJ%\test_ctensor.o"
 %GCC% -std=c23 -O3 -march=native -mavx2 -mfma -I "%API%" -c "%TEST%\test_mat_transpose.c" -o "%OBJ%\test_mat_transpose.o"
@@ -126,3 +127,4 @@ goto end
 
 :end
 endlocal
+
