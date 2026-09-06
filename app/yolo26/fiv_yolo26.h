@@ -29,6 +29,7 @@ typedef struct {
     void* net;              /* fiv neural network (engine) */
     int   layer_node[24];   /* output node id of model.model[i], i = 0..22 */
     int   head_node[6];     /* Detect one2one raw heads: box0,box1,box2,cls0,cls1,cls2 */
+    int   mask_node[3];     /* Segment26 one2one_cv4 (mask coef) heads; -1 when absent */
 } fiv_yolo26_graph;
 
 /* attn[i][0..5] = { qkv_w, qkv_b, pe_w, pe_b, proj_w, proj_b } for the i-th

@@ -1,1 +1,1 @@
-{"name": "layer03_Conv", "shape": [1, 64, 8, 8], "dtype": "f32", "src": "output of model.model[3] (Conv)"}
+{"name": "layer03_Conv", "shape": [1, 64, 40, 40], "dtype": "f32", "src": "output of model.model[3] (Conv)"}

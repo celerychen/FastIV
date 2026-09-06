@@ -1,1 +1,1 @@
-{"name": "layer13_C3k2", "shape": [1, 128, 4, 4], "dtype": "f32", "src": "output of model.model[13] (C3k2)"}
+{"name": "layer13_C3k2", "shape": [1, 128, 20, 20], "dtype": "f32", "src": "output of model.model[13] (C3k2)"}

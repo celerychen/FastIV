@@ -1,1 +1,1 @@
-{"name": "layer20_Conv_in", "shape": [1, 128, 4, 4], "dtype": "f32", "src": "input fed to model.model[20] (Conv)"}
+{"name": "layer20_Conv_in", "shape": [1, 128, 20, 20], "dtype": "f32", "src": "input fed to model.model[20] (Conv)"}

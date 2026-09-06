@@ -1,1 +1,1 @@
-{"name": "strides", "shape": [1, 84], "dtype": "f32", "src": "per-anchor stride [A]"}
+{"name": "strides", "shape": [1, 2100], "dtype": "f32", "src": "per-anchor stride [A]"}
