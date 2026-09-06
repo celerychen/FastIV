@@ -1,1 +1,0 @@
-{"name": "layer17_Conv_in", "shape": [1, 64, 40, 40], "dtype": "f32", "src": "input fed to model.model[17] (Conv)"}

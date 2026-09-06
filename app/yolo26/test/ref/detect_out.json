@@ -1,1 +1,0 @@
-{"name": "detect_out", "shape": [1, 300, 6], "dtype": "f32", "src": "final postprocessed output [1,k,6]"}

@@ -1,1 +1,0 @@
-{"name": "layer16_C3k2_in", "shape": [1, 256, 40, 40], "dtype": "f32", "src": "input fed to model.model[16] (C3k2)"}

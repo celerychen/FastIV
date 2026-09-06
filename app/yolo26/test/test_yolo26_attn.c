@@ -31,6 +31,7 @@
 #include "fiv_ctensor.h"
 #include "fiv_attention_node.h"
 #include "yolo26_ref.h"
+#include "fiv_common.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -41,7 +42,7 @@ static int g_fail = 0;
         else      { g_fail++; printf("  FAIL  %s\n", msg); }               \
     } while (0)
 
-static void test_attention(const char* prefix, int dim, int num_heads, int key_dim, int head_dim, float scale)
+static void test_attention(const char* prefix, int dim, int num_heads, int key_dim, int head_dim, ivf32 scale)
 {
     printf("[Attention %s] dim=%d heads=%d key_dim=%d head_dim=%d\n", prefix, dim, num_heads, key_dim, head_dim);
 
@@ -49,23 +50,23 @@ static void test_attention(const char* prefix, int dim, int num_heads, int key_d
     int ndim; size_t ishape[4];
     char in_name[40];
     snprintf(in_name, sizeof(in_name), "%s_in", prefix);
-    const float* in_f = ref_load(in_name, &ndim, ishape);
+    const ivf32* in_f = ref_load(in_name, &ndim, ishape);
     if (!in_f) { CHECK(0, "load input"); return; }
     fiv_tensor4d* in = fiv_create_tensor4d((size_t*)ishape, FIV_32F1);
-    if (!in) { CHECK(0, "create input tensor"); free((void*)in_f); return; }
+    if (!in) { CHECK(0, "create input tensor"); fiv_free((void*)in_f); return; }
     size_t in_n = ishape[0]*ishape[1]*ishape[2]*ishape[3];
-    memcpy(((fiv_tensor_hdr*)in)->data.fl, in_f, in_n*sizeof(float));
-    free((void*)in_f);
+    memcpy(((fiv_tensor_hdr*)in)->data.fl, in_f, in_n*sizeof(ivf32));
+    fiv_free((void*)in_f);
 
     /* weights */
     char nm[64];
     #define LOADW(suffix) do { snprintf(nm,sizeof(nm),"%s_%s",prefix,#suffix); } while(0)
-    LOADW(qkv_w); const float* qkv_w = ref_load(nm, &ndim, ishape);
-    LOADW(qkv_b); const float* qkv_b = ref_load(nm, &ndim, ishape);
-    LOADW(pe_w);  const float* pe_w  = ref_load(nm, &ndim, ishape);
-    LOADW(pe_b);  const float* pe_b  = ref_load(nm, &ndim, ishape);
-    LOADW(proj_w);const float* proj_w= ref_load(nm, &ndim, ishape);
-    LOADW(proj_b);const float* proj_b= ref_load(nm, &ndim, ishape);
+    LOADW(qkv_w); const ivf32* qkv_w = ref_load(nm, &ndim, ishape);
+    LOADW(qkv_b); const ivf32* qkv_b = ref_load(nm, &ndim, ishape);
+    LOADW(pe_w);  const ivf32* pe_w  = ref_load(nm, &ndim, ishape);
+    LOADW(pe_b);  const ivf32* pe_b  = ref_load(nm, &ndim, ishape);
+    LOADW(proj_w);const ivf32* proj_w= ref_load(nm, &ndim, ishape);
+    LOADW(proj_b);const ivf32* proj_b= ref_load(nm, &ndim, ishape);
 
     if (!qkv_w || !qkv_b || !pe_w || !pe_b || !proj_w || !proj_b) {
         CHECK(0, "load all weights");
@@ -93,7 +94,7 @@ static void test_attention(const char* prefix, int dim, int num_heads, int key_d
 
     char out_name[40];
     snprintf(out_name, sizeof(out_name), "%s_out", prefix);
-    float max_err;
+    ivf32 max_err;
     int rc = ref_cmp(out_name, out->data.fl, 1e-4f, &max_err);
     CHECK(rc == 0, "matches torch Attention.forward output");
     if (rc != 0) printf("        max_abs_err=%.3e\n", max_err);
@@ -109,7 +110,7 @@ int main(void)
     /* hyperparams match every Attention instance: num_heads=2, head_dim=64 ->
      * dim=128, key_dim=32, scale=1/sqrt(32). attn0/attn1 are the real (2x2,
      * near-degenerate) instances; syn_attn is the 16x16 discriminating case. */
-    const float scale = 0.1767766952966369f;
+    const ivf32 scale = 0.1767766952966369f;
     test_attention("attn0",     128, 2, 32, 64, scale);
     test_attention("attn1",     128, 2, 32, 64, scale);
     test_attention("syn_attn",  128, 2, 32, 64, scale);

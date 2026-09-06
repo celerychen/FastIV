@@ -1,1 +1,0 @@
-{"name": "syn_attn_proj_b", "shape": [128], "dtype": "f32", "src": "syn Attention proj conv BN-folded bias [dim]"}

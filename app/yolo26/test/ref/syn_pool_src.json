@@ -1,1 +1,0 @@
-{"name": "syn_pool_src", "shape": [1, 4, 9, 11], "dtype": "f32", "src": "random tensor, P1 MAXPOOL input"}

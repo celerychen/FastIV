@@ -40,3 +40,19 @@ _c.json
 _r.json
 _tree.json
 _tree_entries.jsonl
+
+# ===== YOLO26: regenerable validation truth (already validated; keep out) =====
+app/yolo26/test/ref/
+app/yolo26/test/ref_seg/
+app/yolo26/test/ref_pose/
+app/yolo26/test/ref_cls/
+# truth dumps that a gen_ref*.py --out models/<x> run would recreate
+app/yolo26/models/*/layer*
+app/yolo26/models/*/input*
+app/yolo26/models/*/detect_out*
+app/yolo26/models/*/weights.f32
+app/yolo26/models/*/modules.json
+app/yolo26/models/*/MD5SUMS.txt
+app/yolo26/models/*/head_*
+!app/yolo26/models/*/head_conv*
+app/yolo26/models/*/mask_gt*

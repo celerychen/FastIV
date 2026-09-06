@@ -1,1 +1,0 @@
-{"name": "syn_attn_qkv_w", "shape": [256, 128, 1, 1], "dtype": "f32", "src": "syn Attention qkv conv BN-folded weight [qkv_ch,dim,1,1]"}

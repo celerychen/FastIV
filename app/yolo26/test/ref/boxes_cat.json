@@ -1,1 +1,0 @@
-{"name": "boxes_cat", "shape": [1, 4, 2100], "dtype": "f32", "src": "concatenated raw box head output [1,4,A]"}

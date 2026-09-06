@@ -1,1 +1,0 @@
-{"name": "scores_cat", "shape": [1, 80, 2100], "dtype": "f32", "src": "concatenated raw cls head output [1,nc,A]"}

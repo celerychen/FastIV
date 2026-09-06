@@ -30,6 +30,7 @@
 #include "yolo26_ref.h"
 #include "fiv_yolo26.h"
 #include "fiv_yolo26_post.h"
+#include "fiv_common.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -49,12 +50,12 @@ int main(void)
         if (we > w_tot) w_tot = we;
         if (be > b_tot) b_tot = be;
     }
-    const float* fold_w = yolo26_ref_load_blob("fold_w.f32", 0, w_tot);
-    const float* fold_b = yolo26_ref_load_blob("fold_b.f32", 0, b_tot);
+    const ivf32* fold_w = yolo26_ref_load_blob("fold_w.f32", 0, w_tot);
+    const ivf32* fold_b = yolo26_ref_load_blob("fold_b.f32", 0, b_tot);
     if (!fold_w || !fold_b) { printf("FAIL: fold weight blobs\n"); return 1; }
 
     const char* part[6] = { "qkv_w", "qkv_b", "pe_w", "pe_b", "proj_w", "proj_b" };
-    const float* attn[2][6];
+    const ivf32* attn[2][6];
     memset(attn, 0, sizeof(attn));
     char nm[64];
     int ndim; size_t sh[8];
@@ -68,13 +69,13 @@ int main(void)
     fiv_yolo26_graph* graph = fiv_yolo26_build(fold, n_fold, fold_w, fold_b, attn);
     if (!graph) { printf("FAIL: full graph build\n"); return 1; }
 
-    const float* in_f = ref_load("input", &ndim, sh);
+    const ivf32* in_f = ref_load("input", &ndim, sh);
     if (!in_f || ndim != 4) { printf("FAIL: input\n"); return 1; }
     int in_w = (int)sh[3];
     fiv_tensor4d* input = fiv_create_tensor4d((size_t*)sh, FIV_32F1);
     size_t in_n = sh[0] * sh[1] * sh[2] * sh[3];
-    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(float));
-    free((void*)in_f);
+    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(ivf32));
+    fiv_free((void*)in_f);
 
     void* final_out = NULL;
     fiv_ret r = fiv_nn_run_inference(graph->net, input, &final_out);
@@ -92,12 +93,12 @@ int main(void)
     for (int L = 0; L < 3; L++) strides[L] = in_w / (int)heads[L]->width;
 
     int k = 300;
-    float* det = (float*)malloc((size_t)k * 6 * sizeof(float));
+    ivf32* det = (ivf32*)fiv_malloc((size_t)k * 6 * sizeof(ivf32));
     int kept = fiv_yolo26_postprocess((const fiv_tensor4d**)heads, strides, det, k);
     if (kept <= 0) { printf("FAIL: postprocess kept=%d\n", kept); return 1; }
 
     /* reference detect_out [1,k,6] */
-    const float* ref = ref_load("detect_out", &ndim, sh);
+    const ivf32* ref = ref_load("detect_out", &ndim, sh);
     if (!ref) { printf("FAIL: detect_out load\n"); return 1; }
     int ref_k = (ndim == 3) ? (int)sh[1] : (int)(sh[0] * sh[1]);
     printf("  kept=%d ref_k=%d\n", kept, ref_k);
@@ -117,20 +118,20 @@ int main(void)
      * the random-init reference). The single observed outlier was a duplicate
      * low-confidence box (s~0.058) whose score differed by 1.7e-5 - same box
      * (dbox 1.3e-4), same class. score_tol 1e-4 matches the net/blocks tests. */
-    const float box_tol = 1e-2f, score_tol = 1e-4f;
+    const ivf32 box_tol = 1e-2f, score_tol = 1e-4f;
     int unmatched = 0;
     if (kept != ref_k) {
         unmatched = 1;
         printf("  FAIL  count mismatch: kept=%d ref_k=%d\n", kept, ref_k);
     } else {
-        int* used = (int*)calloc((size_t)kept, sizeof(int));
+        int* used = (int*)fiv_calloc((size_t)kept, sizeof(int));
         if (!used) { printf("FAIL: calloc\n"); return 1; }
         for (int i = 0; i < ref_k; i++) {
-            const float* t = ref + (size_t)6 * i;
+            const ivf32* t = ref + (size_t)6 * i;
             int found = -1;
             for (int j = 0; j < kept; j++) {
                 if (used[j]) continue;
-                const float* g = det + (size_t)6 * j;
+                const ivf32* g = det + (size_t)6 * j;
                 int ok = (int)lrintf(g[5]) == (int)lrintf(t[5]) &&
                          fabsf(g[4] - t[4]) <= score_tol &&
                          fabsf(g[0] - t[0]) <= box_tol && fabsf(g[1] - t[1]) <= box_tol &&
@@ -146,16 +147,16 @@ int main(void)
                 used[found] = 1;
             }
         }
-        free(used);
+        fiv_free(used);
     }
     if (kept == ref_k && unmatched == 0) { g_pass++; printf("  PASS  detect_out set-matched (%d rows)\n", kept); }
     else { g_fail++; printf("  FAIL  detect_out set-mismatch=%d\n", unmatched); }
 
-    free(det);
-    free((void*)ref);
+    fiv_free(det);
+    fiv_free((void*)ref);
     fiv_yolo26_release(graph);
-    free((void*)fold_w); free((void*)fold_b);
-    for (int a = 0; a < 2; a++) for (int j = 0; j < 6; j++) free((void*)attn[a][j]);
+    fiv_free((void*)fold_w); fiv_free((void*)fold_b);
+    for (int a = 0; a < 2; a++) for (int j = 0; j < 6; j++) fiv_free((void*)attn[a][j]);
 
     /* ---- planted top-k ORDER check: well-separated scores, k=2 < A=3. The
      * two-stage top-k lets ONE strong anchor emit BOTH of its top classes
@@ -177,16 +178,16 @@ int main(void)
             hs[L] = fiv_create_tensor4d(bs, FIV_32F1);
             size_t cs[4] = {1, 2, 1, 1};
             hs[L + 3] = fiv_create_tensor4d(cs, FIV_32F1);
-            memset(((fiv_tensor_hdr*)hs[L])->data.fl, 0, 4 * sizeof(float));
+            memset(((fiv_tensor_hdr*)hs[L])->data.fl, 0, 4 * sizeof(ivf32));
         }
-        float* cl0 = ((fiv_tensor_hdr*)hs[3])->data.fl;   /* level0: ch0=cls0 ch1=cls1 */
-        float* cl1 = ((fiv_tensor_hdr*)hs[4])->data.fl;   /* level1 */
-        float* cl2 = ((fiv_tensor_hdr*)hs[5])->data.fl;   /* level2 */
+        ivf32* cl0 = ((fiv_tensor_hdr*)hs[3])->data.fl;   /* level0: ch0=cls0 ch1=cls1 */
+        ivf32* cl1 = ((fiv_tensor_hdr*)hs[4])->data.fl;   /* level1 */
+        ivf32* cl2 = ((fiv_tensor_hdr*)hs[5])->data.fl;   /* level2 */
         cl0[0] = 9.0f;  cl0[1] = 7.0f;      /* anchor0: cls0 0.9998766, cls1 0.9990888 */
         cl1[0] = 3.0f;  cl1[1] = -9.0f;     /* anchor1: cls0 0.9525741 */
         cl2[0] = -9.0f; cl2[1] = -9.0f;     /* anchor2: ~1e-4 */
         int strides[3] = {8, 16, 32};
-        float buf[2 * 6];
+        ivf32 buf[2 * 6];
         const fiv_tensor4d* hh[6];
         for (int i = 0; i < 6; i++) hh[i] = hs[i];
         int kk = fiv_yolo26_postprocess(hh, strides, buf, 2);

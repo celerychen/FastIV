@@ -27,6 +27,7 @@
 #include "fiv_nn_infer.h"
 #include "yolo26_ref.h"
 #include "fiv_yolo26.h"
+#include "fiv_common.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -55,13 +56,13 @@ int main(void)
         if (we > w_tot) w_tot = we;
         if (be > b_tot) b_tot = be;
     }
-    const float* fold_w = yolo26_ref_load_blob("fold_w.f32", 0, w_tot);
-    const float* fold_b = yolo26_ref_load_blob("fold_b.f32", 0, b_tot);
+    const ivf32* fold_w = yolo26_ref_load_blob("fold_w.f32", 0, w_tot);
+    const ivf32* fold_b = yolo26_ref_load_blob("fold_b.f32", 0, b_tot);
     if (!fold_w || !fold_b) { printf("FAIL: fold weight blobs\n"); return 1; }
 
     /* attention weights attn[2][6] */
     const char* part[6] = { "qkv_w", "qkv_b", "pe_w", "pe_b", "proj_w", "proj_b" };
-    const float* attn[2][6];
+    const ivf32* attn[2][6];
     memset(attn, 0, sizeof(attn));
     char nm[64];
     int ndim; size_t sh[8];
@@ -77,19 +78,19 @@ int main(void)
     if (!graph) { printf("FAIL: full graph build\n"); return 1; }
 
     /* run on the torch reference input */
-    const float* in_f = ref_load("input", &ndim, sh);
+    const ivf32* in_f = ref_load("input", &ndim, sh);
     if (!in_f) { printf("FAIL: load input\n"); return 1; }
     if (ndim != 4) { printf("FAIL: input ndim %d\n", ndim); return 1; }
     fiv_tensor4d* input = fiv_create_tensor4d((size_t*)sh, FIV_32F1);
     if (!input) { printf("FAIL: alloc input tensor\n"); return 1; }
     size_t in_n = sh[0] * sh[1] * sh[2] * sh[3];
-    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(float));
-    free((void*)in_f);
+    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(ivf32));
+    fiv_free((void*)in_f);
 
     void* final_out = NULL;
-    fiv_ret r = fiv_nn_run_inference(graph->net, input, &final_out);
+    fiv_ret result = fiv_nn_run_inference(graph->net, input, &final_out);
     fiv_release_tensor((void**)&input);
-    if (r != FIV_RET_OK) { printf("FAIL: run_inference r=%d\n", r); return 1; }
+    if (result != FIV_RET_OK) { printf("FAIL: run_inference r=%d\n", result); return 1; }
 
     /* layer outputs: layerNN_<Type> (only layers that produced a node) */
     for (int i = 0; i < 23; i++) {
@@ -99,7 +100,7 @@ int main(void)
         snprintf(out_name, sizeof(out_name), "layer%02d_%s", i, kLayerType[i]);
         fiv_tensor4d* out = (fiv_tensor4d*)fiv_neural_network_get_node_output(graph->net, graph->layer_node[i]);
         if (!out) { g_fail++; printf("  [FAIL] %s read output\n", out_name); continue; }
-        float max_err;
+        ivf32 max_err;
         int rc = ref_cmp(out_name, ((fiv_tensor_hdr*)out)->data.fl, 1e-4f, &max_err);
         if (rc == 0) g_pass++; else g_fail++;
     }
@@ -111,7 +112,7 @@ int main(void)
         snprintf(out_name, sizeof(out_name), "layer%02d_%s", i, kLayerType[i]);
         fiv_tensor4d* out = (fiv_tensor4d*)fiv_neural_network_get_node_output(graph->net, graph->layer_node[i]);
         if (!out) { g_fail++; printf("  [FAIL] %s read output\n", out_name); continue; }
-        float max_err;
+        ivf32 max_err;
         int rc = ref_cmp(out_name, ((fiv_tensor_hdr*)out)->data.fl, 1e-4f, &max_err);
         if (rc == 0) g_pass++; else g_fail++;
     }
@@ -122,16 +123,16 @@ int main(void)
     for (int h = 0; h < 6; h++) {
         fiv_tensor4d* out = (fiv_tensor4d*)fiv_neural_network_get_node_output(graph->net, graph->head_node[h]);
         if (!out) { g_fail++; printf("  [FAIL] %s read output\n", head_name[h]); continue; }
-        float max_err;
+        ivf32 max_err;
         int rc = ref_cmp(head_name[h], ((fiv_tensor_hdr*)out)->data.fl, 1e-4f, &max_err);
         if (rc == 0) g_pass++; else g_fail++;
     }
 
     fiv_yolo26_release(graph);
-    free((void*)fold_w);
-    free((void*)fold_b);
+    fiv_free((void*)fold_w);
+    fiv_free((void*)fold_b);
     for (int a = 0; a < 2; a++)
-        for (int j = 0; j < 6; j++) free((void*)attn[a][j]);
+        for (int j = 0; j < 6; j++) fiv_free((void*)attn[a][j]);
 
     printf("=== P4 full net: pass=%d fail=%d ===\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

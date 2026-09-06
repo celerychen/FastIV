@@ -1,1 +1,0 @@
-{"name": "syn_silu_out", "shape": [1, 8, 5, 7], "dtype": "f32", "src": "F.silu(syn_silu_src)"}

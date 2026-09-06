@@ -31,6 +31,7 @@
 #include "fiv_slice_node.h"
 #include "fiv_attention_node.h"
 #include "yolo26_ref.h"
+#include "fiv_common.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -41,8 +42,8 @@ static int g_fail = 0;
 /* NN node type for add_node (api/fiv_nn.h fiv_nn_node_type). */
 static int fiv_y26_node_type(const yolo26_fold_entry* e)
 {
-    if (e->g == 1 && e->k == 1) return FIV_NN_NODE_CONV2D_POINTWISE;
-    if (e->g == e->in_c && e->g == e->out_c) return FIV_NN_NODE_CONV2D_DEPTHWISE;
+    if (e->groups == 1 && e->kernel == 1) return FIV_NN_NODE_CONV2D_POINTWISE;
+    if (e->groups == e->input_channels && e->groups == e->output_channels) return FIV_NN_NODE_CONV2D_DEPTHWISE;
     return FIV_NN_NODE_CONV2D_STD;
 }
 
@@ -50,15 +51,15 @@ static int fiv_y26_node_type(const yolo26_fold_entry* e)
  * STD=0, DEPTHWISE=1, POINTWISE=2). Distinct from the NN node enum above. */
 static int fiv_y26_conv_method(const yolo26_fold_entry* e)
 {
-    if (e->g == 1 && e->k == 1) return 2;   /* FIV_CONV2D_POINTWISE */
-    if (e->g == e->in_c && e->g == e->out_c) return 1;  /* FIV_CONV2D_DEPTHWISE */
+    if (e->groups == 1 && e->kernel == 1) return 2;   /* FIV_CONV2D_POINTWISE */
+    if (e->groups == e->input_channels && e->groups == e->output_channels) return 1;  /* FIV_CONV2D_DEPTHWISE */
     return 0;                               /* FIV_CONV2D_STD */
 }
 
 /* Build the engine graph for one top-level Conv layer (single conv + optional
  * SiLU), inject the folded weights and run it on `input`. Returns the output
  * node id (>= 1) or -1. The net stays alive; caller reads the node output. */
-static int fiv_y26_run_conv_layer(const yolo26_fold_entry* e, const float* in_data,
+static int fiv_y26_run_conv_layer(const yolo26_fold_entry* e, const ivf32* in_data,
                                   const size_t in_shape[4], void** net_out)
 {
     void* net = fiv_create_neural_network();
@@ -67,26 +68,26 @@ static int fiv_y26_run_conv_layer(const yolo26_fold_entry* e, const float* in_da
     fiv_conv2d_params p;
     memset(&p, 0, sizeof(p));
     p.conv2d_method   = fiv_y26_conv_method(e);
-    p.kernel_size_x   = e->k;
-    p.kernel_size_y   = e->k;
-    p.stride          = e->s;
+    p.kernel_size_x   = e->kernel;
+    p.kernel_size_y   = e->kernel;
+    p.stride          = e->stride;
     p.padding_method  = 0;                 /* zero fill (torch default padding) */
-    p.input_channels  = e->in_c;
-    p.output_channels = e->out_c;
+    p.input_channels  = e->input_channels;
+    p.output_channels = e->output_channels;
     p.bias            = 1;                 /* BN fold always yields a bias */
-    p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = e->p;
+    p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = e->padding;
 
     int node_type = fiv_y26_node_type(e);
     int conv_id   = 1;                     /* node 0 = implicit INPUT */
     if (fiv_neural_network_add_node(net, node_type, 0, conv_id, &p) != FIV_RET_OK)
         goto fail;
 
-    const float* w = yolo26_ref_load_blob("fold_w.f32", e->w_off, e->w_cnt);
-    const float* b = yolo26_ref_load_blob("fold_b.f32", e->b_off, e->b_cnt);
-    if (!w || !b) { free((void*)w); free((void*)b); goto fail; }
+    const ivf32* w = yolo26_ref_load_blob("fold_w.f32", e->w_off, e->w_cnt);
+    const ivf32* b = yolo26_ref_load_blob("fold_b.f32", e->b_off, e->b_cnt);
+    if (!w || !b) { fiv_free((void*)w); fiv_free((void*)b); goto fail; }
     fiv_neural_network_set_node_weight(net, conv_id, w);
     fiv_neural_network_set_node_bias(net, conv_id, b);
-    free((void*)w); free((void*)b);
+    fiv_free((void*)w); fiv_free((void*)b);
 
     int out_id = conv_id;
     if (e->act == 1) {
@@ -99,7 +100,7 @@ static int fiv_y26_run_conv_layer(const yolo26_fold_entry* e, const float* in_da
     fiv_tensor4d* input = fiv_create_tensor4d((size_t*)in_shape, FIV_32F1);
     if (!input) goto fail;
     size_t in_n = in_shape[0] * in_shape[1] * in_shape[2] * in_shape[3];
-    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_data, in_n * sizeof(float));
+    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_data, in_n * sizeof(ivf32));
 
     void* final_out = NULL;
     fiv_ret r = fiv_nn_run_inference(net, input, &final_out);
@@ -121,19 +122,19 @@ static void test_conv_layer(const yolo26_fold_entry* e)
 
     int ndim;
     size_t ishape[8];
-    const float* in_f = ref_load(in_name, &ndim, ishape);
+    const ivf32* in_f = ref_load(in_name, &ndim, ishape);
     if (!in_f) { CHECK_FAIL(in_name); return; }
-    if (ndim != 4) { free((void*)in_f); printf("  FAIL  %s ndim=%d\n", in_name, ndim); g_fail++; return; }
+    if (ndim != 4) { fiv_free((void*)in_f); printf("  FAIL  %s ndim=%d\n", in_name, ndim); g_fail++; return; }
 
     void* net = NULL;
     int out_id = fiv_y26_run_conv_layer(e, in_f, ishape, &net);
-    free((void*)in_f);
+    fiv_free((void*)in_f);
     if (out_id < 0) { printf("  FAIL  layer%02d_Conv graph build/run\n", e->layer); g_fail++; return; }
 
     fiv_tensor4d* out = (fiv_tensor4d*)fiv_neural_network_get_node_output(net, out_id);
     if (!out) { printf("  FAIL  layer%02d_Conv read output\n", e->layer); g_fail++; fiv_release_neural_network(&net); return; }
 
-    float max_err;
+    ivf32 max_err;
     int rc = ref_cmp(out_name, ((fiv_tensor_hdr*)out)->data.fl, 1e-4f, &max_err);
     /* ref_cmp already printed the [ ok ]/[FAIL] line; just count here. */
     if (rc == 0) g_pass++; else g_fail++;
@@ -157,33 +158,33 @@ static const yolo26_fold_entry* fold_find(const yolo26_fold_entry* es, int n,
 static int y26_add_conv(void* net, int next_id, int src, const yolo26_fold_entry* e)
 {
     int method;
-    if (e->g == 1 && e->k == 1)       method = 2;   /* FIV_CONV2D_POINTWISE */
-    else if (e->g == e->in_c)         method = 1;   /* FIV_CONV2D_DEPTHWISE */
+    if (e->groups == 1 && e->kernel == 1)       method = 2;   /* FIV_CONV2D_POINTWISE */
+    else if (e->groups == e->input_channels)         method = 1;   /* FIV_CONV2D_DEPTHWISE */
     else                              method = 0;   /* FIV_CONV2D_STD */
     int node_type;
-    if (e->g == 1 && e->k == 1)       node_type = FIV_NN_NODE_CONV2D_POINTWISE;
-    else if (e->g == e->in_c)         node_type = FIV_NN_NODE_CONV2D_DEPTHWISE;
+    if (e->groups == 1 && e->kernel == 1)       node_type = FIV_NN_NODE_CONV2D_POINTWISE;
+    else if (e->groups == e->input_channels)         node_type = FIV_NN_NODE_CONV2D_DEPTHWISE;
     else                              node_type = FIV_NN_NODE_CONV2D_STD;
 
     fiv_conv2d_params p;
     memset(&p, 0, sizeof(p));
     p.conv2d_method   = method;
-    p.kernel_size_x   = e->k;
-    p.kernel_size_y   = e->k;
-    p.stride          = e->s;
+    p.kernel_size_x   = e->kernel;
+    p.kernel_size_y   = e->kernel;
+    p.stride          = e->stride;
     p.padding_method  = 0;
-    p.input_channels  = e->in_c;
-    p.output_channels = e->out_c;
+    p.input_channels  = e->input_channels;
+    p.output_channels = e->output_channels;
     p.bias            = 1;
-    p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = e->p;
+    p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = e->padding;
     if (fiv_neural_network_add_node(net, node_type, src, next_id, &p) != FIV_RET_OK)
         return -1;
-    const float* w = yolo26_ref_load_blob("fold_w.f32", e->w_off, e->w_cnt);
-    const float* b = yolo26_ref_load_blob("fold_b.f32", e->b_off, e->b_cnt);
-    if (!w || !b) { free((void*)w); free((void*)b); return -1; }
+    const ivf32* w = yolo26_ref_load_blob("fold_w.f32", e->w_off, e->w_cnt);
+    const ivf32* b = yolo26_ref_load_blob("fold_b.f32", e->b_off, e->b_cnt);
+    if (!w || !b) { fiv_free((void*)w); fiv_free((void*)b); return -1; }
     fiv_neural_network_set_node_weight(net, next_id, w);
     fiv_neural_network_set_node_bias(net, next_id, b);
-    free((void*)w); free((void*)b);
+    fiv_free((void*)w); fiv_free((void*)b);
     return next_id;
 }
 
@@ -199,14 +200,14 @@ static int y26_add_silu(void* net, int next_id, int src)
    v8.4 SPPF source: c_ = c1//2; cv1(1x1, act=False) c1->c_; n=3 maxpool k5 s1 p2;
    cv2(1x1, act) c_*(n+1) -> c2; add = (shortcut && c1==c2). */
 static int y26_run_sppf(const yolo26_fold_entry* entries, int n_entries,
-                        const float* in_data, const size_t in_shape[4], void** net_out)
+                        const ivf32* in_data, const size_t in_shape[4], void** net_out)
 {
     const yolo26_fold_entry* cv1 = fold_find(entries, n_entries, 9, ".cv1.conv");
     const yolo26_fold_entry* cv2 = fold_find(entries, n_entries, 9, ".cv2.conv");
     if (!cv1 || !cv2) return -1;
-    int c_ = cv1->out_c;            /* cv1 out = c_ (c1//2) */
-    int cat_ch = c_ * (cv1->k ? 4 : 4);   /* n=3 -> 4 cat inputs */
-    cat_ch = cv2->in_c;             /* truth from the fold table */
+    int c_ = cv1->output_channels;            /* cv1 out = c_ (c1//2) */
+    int cat_ch = c_ * (cv1->kernel ? 4 : 4);   /* n=3 -> 4 cat inputs */
+    cat_ch = cv2->input_channels;             /* truth from the fold table */
 
     void* net = fiv_create_neural_network();
     if (!net) return -1;
@@ -259,7 +260,7 @@ static int y26_run_sppf(const yolo26_fold_entry* entries, int n_entries,
     fiv_tensor4d* input = fiv_create_tensor4d((size_t*)in_shape, FIV_32F1);
     if (!input) { fprintf(stderr, "  DBG sppf input alloc failed\n"); goto fail; }
     size_t in_n = in_shape[0] * in_shape[1] * in_shape[2] * in_shape[3];
-    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_data, in_n * sizeof(float));
+    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_data, in_n * sizeof(ivf32));
     void* final_out = NULL;
     fiv_ret r = fiv_nn_run_inference(net, input, &final_out);
     fiv_release_tensor((void**)&input);
@@ -277,15 +278,15 @@ static void test_sppf(const yolo26_fold_entry* entries, int n_entries)
     const char* out_name = "layer09_SPPF";
     int ndim;
     size_t ishape[8];
-    const float* in_f = ref_load(in_name, &ndim, ishape);
+    const ivf32* in_f = ref_load(in_name, &ndim, ishape);
     if (!in_f) { CHECK_FAIL(in_name); return; }
     void* net = NULL;
     int out_id = y26_run_sppf(entries, n_entries, in_f, ishape, &net);
-    free((void*)in_f);
+    fiv_free((void*)in_f);
     if (out_id < 0) { printf("  FAIL  SPPF graph build/run\n"); g_fail++; return; }
     fiv_tensor4d* out = (fiv_tensor4d*)fiv_neural_network_get_node_output(net, out_id);
     if (!out) { printf("  FAIL  SPPF read output\n"); g_fail++; fiv_release_neural_network(&net); return; }
-    float max_err;
+    ivf32 max_err;
     int rc = ref_cmp(out_name, ((fiv_tensor_hdr*)out)->data.fl, 1e-4f, &max_err);
     if (rc == 0) g_pass++; else g_fail++;
     fiv_release_neural_network(&net);
@@ -322,7 +323,7 @@ static const yolo26_fold_entry* y26_rel(const yolo26_fold_entry* es, int n,
 }
 
 /* True when any fold entry of this layer sits under `modpref` (a module
-   prefix ending in '.', e.g. "m.0."). Paths are exact strings like
+   prefix ending in '.', e.groups. "m.0."). Paths are exact strings like
    "model.<lay>.m.0.cv1.conv", so module-existence is a prefix test - an
    exact full-string match against "model.<lay>.m.0..conv" never hits. */
 static int y26_has_mod(const yolo26_fold_entry* es, int n, int lay, const char* modpref)
@@ -341,31 +342,31 @@ static int y26_gconv(y26gb* g, int src, const yolo26_fold_entry* e)
 {
     if (!e) return -1;
     int method, node_type;
-    if (e->g == 1 && e->k == 1)      { method = 2; node_type = FIV_NN_NODE_CONV2D_POINTWISE; }
-    else if (e->g == e->in_c)        { method = 1; node_type = FIV_NN_NODE_CONV2D_DEPTHWISE; }
+    if (e->groups == 1 && e->kernel == 1)      { method = 2; node_type = FIV_NN_NODE_CONV2D_POINTWISE; }
+    else if (e->groups == e->input_channels)        { method = 1; node_type = FIV_NN_NODE_CONV2D_DEPTHWISE; }
     else                             { method = 0; node_type = FIV_NN_NODE_CONV2D_STD; }
 
     fiv_conv2d_params p;
     memset(&p, 0, sizeof(p));
     p.conv2d_method   = method;
-    p.kernel_size_x   = e->k;
-    p.kernel_size_y   = e->k;
-    p.stride          = e->s;
+    p.kernel_size_x   = e->kernel;
+    p.kernel_size_y   = e->kernel;
+    p.stride          = e->stride;
     p.padding_method  = 0;
-    p.input_channels  = e->in_c;
-    p.output_channels = e->out_c;
+    p.input_channels  = e->input_channels;
+    p.output_channels = e->output_channels;
     p.bias            = 1;
-    p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = e->p;
+    p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = e->padding;
 
     int nid = g->id++;
     if (fiv_neural_network_add_node(g->net, node_type, src, nid, &p) != FIV_RET_OK)
         return -1;
-    const float* w = yolo26_ref_load_blob("fold_w.f32", e->w_off, e->w_cnt);
-    const float* b = yolo26_ref_load_blob("fold_b.f32", e->b_off, e->b_cnt);
-    if (!w || !b) { free((void*)w); free((void*)b); return -1; }
+    const ivf32* w = yolo26_ref_load_blob("fold_w.f32", e->w_off, e->w_cnt);
+    const ivf32* b = yolo26_ref_load_blob("fold_b.f32", e->b_off, e->b_cnt);
+    if (!w || !b) { fiv_free((void*)w); fiv_free((void*)b); return -1; }
     fiv_neural_network_set_node_weight(g->net, nid, w);
     fiv_neural_network_set_node_bias(g->net, nid, b);
-    free((void*)w); free((void*)b);
+    fiv_free((void*)w); fiv_free((void*)b);
     if (e->act == 1) {
         int sid = g->id++;
         if (fiv_neural_network_add_node(g->net, FIV_NN_NODE_SILU, nid, sid, NULL) != FIV_RET_OK)
@@ -409,7 +410,7 @@ static int y26_gadd2(y26gb* g, int a, int b)
     return nid;
 }
 
-/* Bottleneck: x -> cv1 -> cv2 -> (+ x). mpref e.g. "m.0." or "m.0.m.1." */
+/* Bottleneck: x -> cv1 -> cv2 -> (+ x). mpref e.groups. "m.0." or "m.0.m.1." */
 static int y26_bottleneck(y26gb* g, int lay, const char* mpref, int src)
 {
     char r1[128], r2[128];
@@ -444,7 +445,7 @@ static int y26_c3k_module(y26gb* g, int lay, int src)
     int b2 = y26_gconv(g, src, c2);          /* cv2(x) parallel branch */
     if (b2 < 0) return -1;
     int srcs[2] = { b1, b2 };
-    int cat = y26_gcat(g, srcs, 2, c3->in_c);
+    int cat = y26_gcat(g, srcs, 2, c3->input_channels);
     if (cat < 0) return -1;
     return y26_gconv(g, cat, c3);
 }
@@ -455,7 +456,7 @@ static int y26_c3k2(y26gb* g, int lay)
     const yolo26_fold_entry* cv1 = y26_rel(g->es, g->n, lay, "cv1");
     const yolo26_fold_entry* cv2 = y26_rel(g->es, g->n, lay, "cv2");
     if (!cv1 || !cv2) return -1;
-    int half = cv1->out_c / 2;               /* chunk channel c */
+    int half = cv1->output_channels / 2;               /* chunk channel c */
 
     int v1 = y26_gconv(g, 0, cv1);
     if (v1 < 0) return -1;
@@ -484,7 +485,7 @@ static int y26_c3k2(y26gb* g, int lay)
     int srcs[12];
     srcs[0] = sa;
     for (int i = 0; i < cnt; i++) srcs[1 + i] = chain[i];
-    int cat = y26_gcat(g, srcs, 1 + cnt, cv2->in_c);
+    int cat = y26_gcat(g, srcs, 1 + cnt, cv2->input_channels);
     if (cat < 0) return -1;
     return y26_gconv(g, cat, cv2);
 }
@@ -499,22 +500,22 @@ static void test_c3k2(const yolo26_fold_entry* entries, int n_entries, int lay)
 
     int ndim;
     size_t ishape[8];
-    const float* in_f = ref_load(in_name, &ndim, ishape);
+    const ivf32* in_f = ref_load(in_name, &ndim, ishape);
     if (!in_f) { CHECK_FAIL(in_name); return; }
 
     void* net = fiv_create_neural_network();
-    if (!net) { free((void*)in_f); g_fail++; return; }
+    if (!net) { fiv_free((void*)in_f); g_fail++; return; }
     y26gb g;
     g.net = net; g.id = 1; g.es = entries; g.n = n_entries;
     int out_id = y26_c3k2(&g, lay);
-    if (out_id < 0) { free((void*)in_f); fiv_release_neural_network(&net);
+    if (out_id < 0) { fiv_free((void*)in_f); fiv_release_neural_network(&net);
                       printf("  FAIL  %s graph build\\n", tname); g_fail++; return; }
 
     fiv_tensor4d* input = fiv_create_tensor4d((size_t*)ishape, FIV_32F1);
-    if (!input) { free((void*)in_f); fiv_release_neural_network(&net); g_fail++; return; }
+    if (!input) { fiv_free((void*)in_f); fiv_release_neural_network(&net); g_fail++; return; }
     size_t in_n = ishape[0] * ishape[1] * ishape[2] * ishape[3];
-    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(float));
-    free((void*)in_f);
+    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(ivf32));
+    fiv_free((void*)in_f);
     void* final_out = NULL;
     fiv_ret r = fiv_nn_run_inference(net, input, &final_out);
     fiv_release_tensor((void**)&input);
@@ -524,7 +525,7 @@ static void test_c3k2(const yolo26_fold_entry* entries, int n_entries, int lay)
     fiv_tensor4d* out = (fiv_tensor4d*)fiv_neural_network_get_node_output(net, out_id);
     if (!out) { fiv_release_neural_network(&net);
                 printf("  FAIL  %s read out\\n", tname); g_fail++; return; }
-    float max_err;
+    ivf32 max_err;
     int rc = ref_cmp(out_name, ((fiv_tensor_hdr*)out)->data.fl, 1e-4f, &max_err);
     if (rc == 0) g_pass++; else g_fail++;
     fiv_release_neural_network(&net);
@@ -547,7 +548,7 @@ static int y26_gattn(y26gb* g, int src, const char* pref, int dim)
     if (fiv_neural_network_add_node(g->net, FIV_NN_NODE_ATTENTION, src, nid, &ap) != FIV_RET_OK)
         return -1;
     const char* parts[6] = { "qkv_w", "qkv_b", "pe_w", "pe_b", "proj_w", "proj_b" };
-    const float* bb[6];
+    const ivf32* bb[6];
     memset(bb, 0, sizeof(bb));
     char nm[80];
     int ndim; size_t sh[8];
@@ -561,12 +562,12 @@ static int y26_gattn(y26gb* g, int src, const char* pref, int dim)
         if (nc && nc->op)
             rs = fiv_attention_node_set_weights(nc->op, bb[0], bb[1], bb[2], bb[3], bb[4], bb[5]);
     }
-    for (int i = 0; i < 6; i++) free((void*)bb[i]);
+    for (int i = 0; i < 6; i++) fiv_free((void*)bb[i]);
     return rs == FIV_RET_OK ? nid : -1;
 }
 
 /* PSABlock forward: x -> x + attn(x) -> m = ffn(that) -> out = m + that.
-   stem locates the ffn convs (e.g. "m.0" or "m.0.1"). */
+   stem locates the ffn convs (e.groups. "m.0" or "m.0.1"). */
 static int y26_psa(y26gb* g, int lay, const char* stem, int src, const char* attn_pref, int dim)
 {
     char r0[96], r1[96];
@@ -592,7 +593,7 @@ static int y26_c2psa(y26gb* g)
     const yolo26_fold_entry* cv1 = y26_rel(g->es, g->n, 10, "cv1");
     const yolo26_fold_entry* cv2 = y26_rel(g->es, g->n, 10, "cv2");
     if (!cv1 || !cv2) return -1;
-    int half = cv1->out_c / 2;
+    int half = cv1->output_channels / 2;
     int v1 = y26_gconv(g, 0, cv1);
     if (v1 < 0) return -1;
     int a = y26_gslice(g, v1, 0, half);
@@ -601,7 +602,7 @@ static int y26_c2psa(y26gb* g)
     int m = y26_psa(g, 10, "m.0", b, "attn0", half);
     if (m < 0) return -1;
     int s2[2] = { a, m };
-    int cc = y26_gcat(g, s2, 2, cv2->in_c);
+    int cc = y26_gcat(g, s2, 2, cv2->input_channels);
     if (cc < 0) return -1;
     return y26_gconv(g, cc, cv2);
 }
@@ -613,7 +614,7 @@ static int y26_c3k2_attn(y26gb* g)
     const yolo26_fold_entry* cv1 = y26_rel(g->es, g->n, 22, "cv1");
     const yolo26_fold_entry* cv2 = y26_rel(g->es, g->n, 22, "cv2");
     if (!cv1 || !cv2) return -1;
-    int half = cv1->out_c / 2;
+    int half = cv1->output_channels / 2;
     int v1 = y26_gconv(g, 0, cv1);
     if (v1 < 0) return -1;
     int a = y26_gslice(g, v1, 0, half);
@@ -624,7 +625,7 @@ static int y26_c3k2_attn(y26gb* g)
     int m = y26_psa(g, 22, "m.0.1", bn, "attn1", half);
     if (m < 0) return -1;
     int s3[3] = { a, b, m };
-    int cc = y26_gcat(g, s3, 3, cv2->in_c);
+    int cc = y26_gcat(g, s3, 3, cv2->input_channels);
     if (cc < 0) return -1;
     return y26_gconv(g, cc, cv2);
 }
@@ -634,22 +635,22 @@ static void y26_compare(const char* in_name, const char* out_name,
                         int (*graph)(y26gb*), const yolo26_fold_entry* es, int n)
 {
     int ndim; size_t ishape[8];
-    const float* in_f = ref_load(in_name, &ndim, ishape);
+    const ivf32* in_f = ref_load(in_name, &ndim, ishape);
     if (!in_f) { CHECK_FAIL(in_name); return; }
     void* net = fiv_create_neural_network();
-    if (!net) { free((void*)in_f); printf("  FAIL  %s alloc net\n", out_name); g_fail++; return; }
+    if (!net) { fiv_free((void*)in_f); printf("  FAIL  %s alloc net\n", out_name); g_fail++; return; }
     y26gb g;
     g.net = net; g.id = 1; g.es = es; g.n = n;
     int out_id = graph(&g);
     if (out_id < 0) {
-        free((void*)in_f); fiv_release_neural_network(&net);
+        fiv_free((void*)in_f); fiv_release_neural_network(&net);
         printf("  FAIL  %s graph build\n", out_name); g_fail++; return;
     }
     fiv_tensor4d* input = fiv_create_tensor4d((size_t*)ishape, FIV_32F1);
-    if (!input) { free((void*)in_f); fiv_release_neural_network(&net); g_fail++; return; }
+    if (!input) { fiv_free((void*)in_f); fiv_release_neural_network(&net); g_fail++; return; }
     size_t in_n = ishape[0] * ishape[1] * ishape[2] * ishape[3];
-    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(float));
-    free((void*)in_f);
+    memcpy(((fiv_tensor_hdr*)input)->data.fl, in_f, in_n * sizeof(ivf32));
+    fiv_free((void*)in_f);
     void* final_out = NULL;
     fiv_ret r = fiv_nn_run_inference(net, input, &final_out);
     fiv_release_tensor((void**)&input);
@@ -662,7 +663,7 @@ static void y26_compare(const char* in_name, const char* out_name,
         fiv_release_neural_network(&net);
         printf("  FAIL  %s read out\n", out_name); g_fail++; return;
     }
-    float max_err;
+    ivf32 max_err;
     int rc = ref_cmp(out_name, ((fiv_tensor_hdr*)out)->data.fl, 1e-4f, &max_err);
     if (rc == 0) g_pass++; else g_fail++;
     fiv_release_neural_network(&net);
@@ -684,7 +685,7 @@ int main(void)
         yolo26_fold_entry* e = &entries[i];
         int single = 1;
         for (int j = 0; j < n; j++) {
-            if (j != i && entries[j].layer == e->layer && entries[j].in_c > 0) { single = 0; break; }
+            if (j != i && entries[j].layer == e->layer && entries[j].input_channels > 0) { single = 0; break; }
         }
         if (!single) continue;
         if (strcmp(e->parent, "Conv") != 0) continue;

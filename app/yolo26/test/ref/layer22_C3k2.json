@@ -1,1 +1,0 @@
-{"name": "layer22_C3k2", "shape": [1, 256, 10, 10], "dtype": "f32", "src": "output of model.model[22] (C3k2)"}

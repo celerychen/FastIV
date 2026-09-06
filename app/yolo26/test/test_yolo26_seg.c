@@ -19,6 +19,7 @@
 #include "yolo26_ref.h"
 #include "fiv_yolo26.h"
 #include "fiv_yolo26_post.h"
+#include "fiv_common.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -41,12 +42,12 @@ int main(void){
         if (we>w_tot) w_tot=we;
         if (be>b_tot) b_tot=be;
     }
-    const float* fold_w = yolo26_ref_load_blob("fold_w.f32",0,w_tot);
-    const float* fold_b = yolo26_ref_load_blob("fold_b.f32",0,b_tot);
+    const ivf32* fold_w = yolo26_ref_load_blob("fold_w.f32",0,w_tot);
+    const ivf32* fold_b = yolo26_ref_load_blob("fold_b.f32",0,b_tot);
     if (!fold_w || !fold_b) { printf("FAIL blobs\n"); return 1; }
 
     const char* part[6]={"qkv_w","qkv_b","pe_w","pe_b","proj_w","proj_b"};
-    const float* attn[2][6];
+    const ivf32* attn[2][6];
     memset(attn,0,sizeof(attn));
     char nm[64]; int ndim; size_t sh[8];
     for (int a=0;a<2;a++) for (int j=0;j<6;j++){
@@ -61,12 +62,12 @@ int main(void){
     int have_mask = g->mask_node[0]>=0 && g->mask_node[1]>=0 && g->mask_node[2]>=0;
     if (!have_mask) { printf("FAIL mask branch not built\n"); g_fail++; }
 
-    const float* in_f = ref_load("input",&ndim,sh);
+    const ivf32* in_f = ref_load("input",&ndim,sh);
     if (!in_f || ndim!=4) { printf("FAIL input\n"); return 1; }
     fiv_tensor4d* input = fiv_create_tensor4d((size_t*)sh,FIV_32F1);
     size_t in_n = sh[0]*sh[1]*sh[2]*sh[3];
-    memcpy(((fiv_tensor_hdr*)input)->data.fl,in_f,in_n*sizeof(float));
-    free((void*)in_f);
+    memcpy(((fiv_tensor_hdr*)input)->data.fl,in_f,in_n*sizeof(ivf32));
+    fiv_free((void*)in_f);
     void* final_out = NULL;
     fiv_ret r = fiv_nn_run_inference(g->net,input,&final_out);
     fiv_release_tensor((void**)&input);
@@ -80,7 +81,7 @@ int main(void){
         snprintf(on,sizeof(on),"layer%02d_%s",i,kLayerType[i]);
         fiv_tensor4d* out = (fiv_tensor4d*)fiv_neural_network_get_node_output(g->net,g->layer_node[i]);
         if (!out){ g_fail++; printf("  [FAIL] %s read\n",on); continue; }
-        float me;
+        ivf32 me;
         int rc = ref_cmp(on,((fiv_tensor_hdr*)out)->data.fl,1e-4f,&me);
         if (rc==0) g_pass++; else g_fail++;
     }
@@ -92,7 +93,7 @@ int main(void){
         snprintf(on,sizeof(on),"layer%02d_%s",i,kLayerType[i]);
         fiv_tensor4d* out=(fiv_tensor4d*)fiv_neural_network_get_node_output(g->net,g->layer_node[i]);
         if (!out){ g_fail++; printf("  [FAIL] %s read\n",on); continue; }
-        float me; int rc=ref_cmp(on,((fiv_tensor_hdr*)out)->data.fl,1e-4f,&me);
+        ivf32 me; int rc=ref_cmp(on,((fiv_tensor_hdr*)out)->data.fl,1e-4f,&me);
         if (rc==0) g_pass++; else g_fail++;
     }
     /* nine raw heads: box0..2 cls0..2 mask0..2 */
@@ -108,7 +109,7 @@ int main(void){
         fiv_tensor4d* out=(fiv_tensor4d*)fiv_neural_network_get_node_output(g->net,node[h]);
         if (!out){ g_fail++; printf("  [FAIL] %s read\n",hn[h]); continue; }
         /* Real weights: cls1/cls2 are deepest heads (layer19/22+5 convs), fp32 drift ~3e-4 */
-        float me; int rc=ref_cmp(hn[h],((fiv_tensor_hdr*)out)->data.fl,1e-3f,&me);
+        ivf32 me; int rc=ref_cmp(hn[h],((fiv_tensor_hdr*)out)->data.fl,1e-3f,&me);
         if (rc==0) g_pass++; else g_fail++;
     }
 
@@ -119,25 +120,25 @@ int main(void){
         for (int i = 0; i < 9; i++) hh[i] = (const fiv_tensor4d*)fiv_neural_network_get_node_output(g->net, node[i]);
         int strides[3];
         for (int L = 0; L < 3; L++) strides[L] = in_w / (int)hh[L]->width;
-        float* det = (float*)malloc((size_t)300 * 38 * sizeof(float));
+        ivf32* det = (ivf32*)fiv_malloc((size_t)300 * 38 * sizeof(ivf32));
         int kept = fiv_yolo26_postprocess_seg(hh, strides, det, 300);
         if (kept <= 0) { g_fail++; printf("  [FAIL] seg decode kept=%d\n", kept); }
         else {
-            const float* ref = ref_load("detect_out", &ndim, sh);
+            const ivf32* ref = ref_load("detect_out", &ndim, sh);
             int ref_k = (ndim == 3) ? (int)sh[1] : (int)(sh[0]*sh[1]);
             printf("  seg decode kept=%d ref_k=%d\n", kept, ref_k);
             /* set-match: box 1e-2 / score 1e-4 / class exact (fp32 drift on the
                deepest heads was ~3e-4, decode adds nothing beyond sigmoid). */
-            int* used = (int*)calloc((size_t)ref_k, sizeof(int));
-            int* cmap = (int*)malloc((size_t)ref_k * sizeof(int));   /* torch row i -> C row */
+            int* used = (int*)fiv_calloc((size_t)ref_k, sizeof(int));
+            int* cmap = (int*)fiv_malloc((size_t)ref_k * sizeof(int));   /* torch row i -> C row */
             for (int i = 0; i < ref_k; i++) cmap[i] = -1;
             int unmatched = 0;
             for (int i = 0; i < ref_k; i++) {
-                const float* t = ref + (size_t)38 * i;
+                const ivf32* t = ref + (size_t)38 * i;
                 int found = -1;
                 for (int j = 0; j < kept; j++) {
                     if (used[j]) continue;
-                    const float* cdet = det + (size_t)38 * j;
+                    const ivf32* cdet = det + (size_t)38 * j;
                     int ok = (int)lrintf(cdet[5]) == (int)lrintf(t[5]) &&
                              fabsf(cdet[4]-t[4]) <= 1e-4f &&
                              fabsf(cdet[0]-t[0]) <= 1e-2f && fabsf(cdet[1]-t[1]) <= 1e-2f &&
@@ -152,7 +153,7 @@ int main(void){
 
             /* ---- mask rebuild: sigmoid(sum_nm coef[nm] * proto[nm]) vs mask_gt0..7 ---- */
             {
-                const float* proto = ref_load("proto", &ndim, sh);
+                const ivf32* proto = ref_load("proto", &ndim, sh);
                 if (proto && kept >= 8) {
                     /* proto ref is [1,nm,Hp,Wp] contiguous; here sh holds its shape */
                     int nm = (int)sh[1], Hp = (int)sh[2], Wp = (int)sh[3];
@@ -162,41 +163,41 @@ int main(void){
                         if (j < 0) { all_ok = 0; break; }
                         char gt_name[24];
                         snprintf(gt_name, sizeof(gt_name), "mask_gt%d", i);
-                        const float* gt = ref_load(gt_name, &ndim, sh);
+                        const ivf32* gt = ref_load(gt_name, &ndim, sh);
                         if (!gt) { all_ok = 0; break; }
-                        const float* c = det + (size_t)38 * j + 6;
-                        float* mbuf = (float*)malloc((size_t)Hp * Wp * sizeof(float));
+                        const ivf32* c = det + (size_t)38 * j + 6;
+                        ivf32* mbuf = (ivf32*)fiv_malloc((size_t)Hp * Wp * sizeof(ivf32));
                         for (int y = 0; y < Hp; y++)
                             for (int x = 0; x < Wp; x++) {
-                                float acc = 0.0f;
+                                ivf32 acc = 0.0f;
                                 for (int m = 0; m < nm; m++)
                                     acc += c[m] * proto[(size_t)m * Hp * Wp + (size_t)y * Wp + x];
                                 mbuf[(size_t)y * Wp + x] = 1.0f / (1.0f + expf(-acc));
                             }
-                        float worst = 0.0f;
+                        ivf32 worst = 0.0f;
                         for (int k = 0; k < Hp*Wp; k++) {
-                            float d = fabsf(mbuf[k] - gt[k]);
+                            ivf32 d = fabsf(mbuf[k] - gt[k]);
                             if (d > worst) worst = d;
                         }
-                        free(mbuf);
-                        free((void*)gt);
+                        fiv_free(mbuf);
+                        fiv_free((void*)gt);
                         if (worst > 1e-2f) { all_ok = 0; printf("    mask_gt%d worst=%.3e\n", i, (double)worst); }
                     }
                     if (all_ok) { g_pass++; printf("  PASS  mask rebuild sigmoid(proto@coef) rows 0..7\n"); }
                     else { g_fail++; printf("  FAIL  mask rebuild\n"); }
-                    free((void*)proto);
+                    fiv_free((void*)proto);
                 } else { g_fail++; printf("  FAIL  mask rebuild (proto/mask missing)\n"); }
             }
-            free(cmap);
-            free(used);
-            free((void*)ref);
+            fiv_free(cmap);
+            fiv_free(used);
+            fiv_free((void*)ref);
         }
-        free(det);
+        fiv_free(det);
     }
 
     fiv_yolo26_release(g);
-    free((void*)fold_w); free((void*)fold_b);
-    for (int a=0;a<2;a++) for (int j=0;j<6;j++) free((void*)attn[a][j]);
+    fiv_free((void*)fold_w); fiv_free((void*)fold_b);
+    for (int a=0;a<2;a++) for (int j=0;j<6;j++) fiv_free((void*)attn[a][j]);
     printf("=== P6-3 seg net: pass=%d fail=%d ===\n",g_pass,g_fail);
     return g_fail==0?0:1;
 }

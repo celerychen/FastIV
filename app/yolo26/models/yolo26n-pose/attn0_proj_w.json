@@ -1,0 +1,1 @@
+{"name": "attn0_proj_w", "shape": [128, 128, 1, 1], "dtype": "f32", "src": "attn0 proj folded w"}
