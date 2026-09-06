@@ -1,1 +1,1 @@
-{"name": "layer10_C2PSA_in", "shape": [1, 256, 2, 2], "dtype": "f32", "src": "input fed to model.model[10] (C2PSA)"}
+{"name": "layer10_C2PSA_in", "shape": [1, 256, 10, 10], "dtype": "f32", "src": "input fed to model.model[10] (C2PSA)"}

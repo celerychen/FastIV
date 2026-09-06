@@ -33,7 +33,7 @@ CONV2D_KERNEL_OBJS := $(addprefix $(OBJDIR)/,fiv_nn_1x1_conv2d.o fiv_nn_2x2_conv
 NEW_NN_OBJS := $(addprefix $(OBJDIR)/,fiv_concat_node.o fiv_prelu_node.o fiv_sigmoid_node.o fiv_spatial_pad_node.o fiv_upsample_node.o fiv_silu_node.o fiv_maxpool_node.o fiv_slice_node.o fiv_attention_node.o)
 MATH      := fiv_math fiv_math_sigmoid fiv_math_softmax fiv_math_swiglu fiv_math_rms_norm
 MATH_OBJS := $(addprefix $(OBJDIR)/,fiv_math.o fiv_math_sigmoid.o fiv_math_softmax.o fiv_math_swiglu.o fiv_math_rms_norm.o)
-TESTS     := test_darray test_ctensor test_mat_transpose test_mat_vec test_mat_mul_vec_db test_mat_mul test_mat_mul_db test_mat_reduce_db test_mat_cholesky test_mat_lu test_mat_eig_sym test_mat_svd test_mat_svd_jacobi test_nn test_nn_mnist test_nn_conv2d test_nn_mnist_conv test_blazeface test_image_io test_color_space_perf test_data_convert test_face_api test_landmark_ops test_landmark_net test_landmark_api test_landmark_e2e test_yunet_api test_yunet_resize test_yolo26_ref test_yolo26_ops test_yolo26_attn test_yolo26_blocks test_yolo26_net test_lp_sp_matrix test_lp_ops test_lp_rescale test_lp_pdhg test_lp_solve test_lp_solve13
+TESTS     := test_darray test_ctensor test_mat_transpose test_mat_vec test_mat_mul_vec_db test_mat_mul test_mat_mul_db test_mat_reduce_db test_mat_cholesky test_mat_lu test_mat_eig_sym test_mat_svd test_mat_svd_jacobi test_nn test_nn_mnist test_nn_conv2d test_nn_mnist_conv test_blazeface test_image_io test_color_space_perf test_data_convert test_face_api test_landmark_ops test_landmark_net test_landmark_api test_landmark_e2e test_yunet_api test_yunet_resize test_yolo26_ref test_yolo26_ops test_yolo26_attn test_yolo26_blocks test_yolo26_net test_yolo26_e2e test_yolo26_seg test_lp_sp_matrix test_lp_ops test_lp_rescale test_lp_pdhg test_lp_solve test_lp_solve13
 
 APPFACE   := ../app/face/blazeFace
 LANDMARK  := ../app/face/landmark
@@ -99,6 +99,8 @@ test_yolo26_ops: $(OBJDIR)/test_yolo26_ops.o $(OBJDIR)/yolo26_ref.o $(NN_ENGINE)
 test_yolo26_attn: $(OBJDIR)/test_yolo26_attn.o $(OBJDIR)/yolo26_ref.o $(NN_ENGINE) $(BASE_OBJS)
 test_yolo26_blocks: $(OBJDIR)/test_yolo26_blocks.o $(OBJDIR)/yolo26_ref.o $(NN_ENGINE) $(BASE_OBJS)
 test_yolo26_net: $(OBJDIR)/test_yolo26_net.o $(OBJDIR)/yolo26_ref.o $(OBJDIR)/fiv_yolo26.o $(NN_ENGINE) $(BASE_OBJS)
+test_yolo26_e2e: $(OBJDIR)/test_yolo26_e2e.o $(OBJDIR)/yolo26_ref.o $(OBJDIR)/fiv_yolo26.o $(OBJDIR)/fiv_yolo26_post.o $(NN_ENGINE) $(BASE_OBJS) $(MATH_OBJS)
+test_yolo26_seg: $(OBJDIR)/test_yolo26_seg.o $(OBJDIR)/yolo26_ref.o $(OBJDIR)/fiv_yolo26.o $(OBJDIR)/fiv_yolo26_post.o $(NN_ENGINE) $(BASE_OBJS) $(MATH_OBJS)
 
 test_lp_sp_matrix: $(OBJDIR)/test_lp_sp_matrix.o $(OBJDIR)/fiv_sp_matrix.o $(OBJDIR)/fiv_ctensor.o $(OBJDIR)/fiv_binary_op.o $(OBJDIR)/fiv_common.o
 

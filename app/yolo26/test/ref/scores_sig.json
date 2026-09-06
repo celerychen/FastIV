@@ -1,1 +1,1 @@
-{"name": "scores_sig", "shape": [1, 80, 84], "dtype": "f32", "src": "scores_cat.sigmoid()"}
+{"name": "scores_sig", "shape": [1, 80, 2100], "dtype": "f32", "src": "scores_cat.sigmoid()"}

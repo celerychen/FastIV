@@ -415,6 +415,7 @@ fiv_yolo26_graph* fiv_yolo26_build(const yolo26_fold_entry* fold, int fold_count
     g.next = 1;
 
     for (int i = 0; i < 24; i++) g.layer_out[i] = -1;
+    for (int i = 0; i < 3; i++) graph->mask_node[i] = -1;
 
     int rc = 0;
     for (int i = 0; i < 23; i++) {
@@ -465,6 +466,12 @@ fiv_yolo26_graph* fiv_yolo26_build(const yolo26_fold_entry* fold, int fold_count
         if (bb < 0 || cc < 0) { rc = -1; break; }
         graph->head_node[lvl]     = bb;
         graph->head_node[3 + lvl] = cc;
+    }
+    /* Segment26 one2one_cv4 (mask coef) branch - only present in seg fold tables */
+    for (int lvl = 0; lvl < 3; lvl++) {
+        int mk = y26_head_chain(&g, feat[lvl], "one2one_cv4", lvl);
+        if (mk < 0) break;          /* absent in detection: leave -1 and stop */
+        graph->mask_node[lvl] = mk;
     }
     if (rc != 0) { fiv_release_neural_network(&net); free(graph); return NULL; }
 

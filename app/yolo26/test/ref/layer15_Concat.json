@@ -1,1 +1,1 @@
-{"name": "layer15_Concat", "shape": [1, 256, 8, 8], "dtype": "f32", "src": "output of model.model[15] (Concat)"}
+{"name": "layer15_Concat", "shape": [1, 256, 40, 40], "dtype": "f32", "src": "output of model.model[15] (Concat)"}

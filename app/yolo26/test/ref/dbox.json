@@ -1,1 +1,1 @@
-{"name": "dbox", "shape": [1, 4, 84], "dtype": "f32", "src": "decoded boxes before stride scaling [1,4,A]"}
+{"name": "dbox", "shape": [1, 4, 2100], "dtype": "f32", "src": "decoded boxes before stride scaling [1,4,A]"}

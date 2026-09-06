@@ -175,18 +175,27 @@ static fiv_ret fiv_maxpool_compute(fiv_maxpool_node* n, fiv_tensor_hdr* out, con
         ivf32*       dst = op + ch * ohw;
         int*         ama = am + ch * ohw;
         for (size_t oy = 0; oy < oh; oy++) {
-            size_t y0 = (oy * st > pt) ? (oy * st - pt) : 0;   /* first in-range row */
+            /* Window covers input rows [ys - pt, ys + kh - pt), ys = oy*st;
+               clamp BOTH ends to [0, height). Clamping only the start (and
+               scanning kh rows from it) pulled out-of-window rows into the max
+               whenever the window overhangs the top edge (oy*st < pt), which a
+               2x2 input masked (break on iy>=height) but real maps expose. */
+            const size_t ys = oy * st;
+            const size_t y_lo = (ys > pt) ? (ys - pt) : 0;
+            long long    y_hi = (long long)ys - (long long)pt + (long long)kh;
+            if (y_hi > (long long)height) y_hi = (long long)height;
+            if (y_hi < 0) y_hi = 0;
             for (size_t ox = 0; ox < ow; ox++) {
-                size_t x0 = (ox * st > pl) ? (ox * st - pl) : 0;
+                const size_t xs = ox * st;
+                const size_t x_lo = (xs > pl) ? (xs - pl) : 0;
+                long long    x_hi = (long long)xs - (long long)pl + (long long)kw;
+                if (x_hi > (long long)width) x_hi = (long long)width;
+                if (x_hi < 0) x_hi = 0;
                 ivf32 maxval = -INFINITY;
                 int  maxoff = 0;
-                for (size_t ky = 0; ky < kh; ky++) {
-                    size_t iy = y0 + ky;
-                    if (iy >= height) break;
+                for (size_t iy = y_lo; iy < (size_t)y_hi; iy++) {
                     const ivf32* row = src + iy * width;
-                    for (size_t kx = 0; kx < kw; kx++) {
-                        size_t ix = x0 + kx;
-                        if (ix >= width) break;
+                    for (size_t ix = x_lo; ix < (size_t)x_hi; ix++) {
                         ivf32 v = row[ix];
                         if (v > maxval) {
                             maxval = v;

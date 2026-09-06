@@ -40,6 +40,7 @@ CFG = ULTRA / "ultralytics" / "cfg" / "models" / "26" / "yolo26.yaml"
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ULTRA))
 
+import numpy as np
 import torch  # noqa: E402
 
 import torch_env  # noqa: E402,F401  metadata shim, must precede ultralytics
@@ -391,12 +392,34 @@ def dump_synthetic(writer):
     writer.dump("syn_attn_proj_b", j_b, "syn Attention proj conv BN-folded bias [dim]")
 
 
+def letterbox_image(path, height, width):
+    """Ultralytics-style letterbox: keep aspect ratio, pad to (height,width)
+    with gray 114, then normalize to float32/255. Returns an RGB CHW tensor
+    with a batch dim [1,3,H,W] -- the exact tensor the model must see so the
+    C-side decode can be compared with torch detect_out on the same input."""
+    from PIL import Image
+    img = Image.open(path).convert("RGB")
+    iw, ih = img.size
+    r = min(width / iw, height / ih)
+    nw, nh = max(1, round(iw * r)), max(1, round(ih * r))
+    img = img.resize((nw, nh))
+    canvas = Image.new("RGB", (width, height), (114, 114, 114))
+    canvas.paste(img, ((width - nw) // 2, (height - nh) // 2))
+    a = torch.from_numpy(np.asarray(canvas, dtype=np.float32) / 255.0)  # [H,W,3] RGB
+    a = a.permute(2, 0, 1).unsqueeze(0).contiguous()                    # [1,3,H,W]
+    return a
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--size", default="64,64", help="input height,width (default 64,64)")
     parser.add_argument("--nc", type=int, default=80)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--out", default=str(HERE / "ref"))
+    parser.add_argument("--weights", default=None,
+                        help="load a pretrained .pt instead of random-init (skips BN perturbation)")
+    parser.add_argument("--image", default=None,
+                        help="letterbox this image as model input instead of randn")
     args = parser.parse_args()
 
     height, width = (int(v) for v in args.size.split(","))
@@ -405,12 +428,21 @@ def main():
 
     from ultralytics.nn.tasks import DetectionModel
 
-    model = DetectionModel(str(CFG), ch=3, nc=args.nc, verbose=False).eval()
+    if args.weights:
+        # Official checkpoint: a pickled DetectionModel. Unpickling pulls in
+        # ultralytics classes, so the metadata shim must run before load.
+        import importlib.metadata as _md
+        _o = _md.version
+        _md.version = lambda n: (_o(n) if n != "torchvision" else "0.0.0")
+        _ck = torch.load(str(args.weights), map_location="cpu", weights_only=False)
+        # AMP-trained checkpoints store half-precision weights; run in float32.
+        model = _ck["model"].float().eval()
+    else:
+        model = DetectionModel(str(CFG), ch=3, nc=args.nc, verbose=False).eval()
+        # Random-init BN is ~identity; pull it off identity first so every dumped
+        # tensor exercises a non-degenerate BN fold (fold bugs become visible).
+        perturb_bns(model)
     detect = model.model[-1]
-
-    # Random-init BN is ~identity; pull it off identity first so every dumped
-    # tensor exercises a non-degenerate BN fold (fold bugs become visible).
-    perturb_bns(model)
 
     captures = {}
     handles = []
@@ -440,7 +472,10 @@ def main():
         handles.append(detect.one2one_cv2[level].register_forward_hook(capture_output(captures, f"head_box{level}")))
         handles.append(detect.one2one_cv3[level].register_forward_hook(capture_output(captures, f"head_cls{level}")))
 
-    x = torch.randn(1, 3, height, width)
+    if args.image:
+        x = letterbox_image(args.image, height, width)
+    else:
+        x = torch.randn(1, 3, height, width)
     with torch.no_grad():
         y, preds = model(x)
     for handle in handles:
@@ -531,6 +566,10 @@ def main():
 
     dump_synthetic(writer)
 
+    names = getattr(model, "names", None)
+    if names:
+        (writer.dir / "names.json").write_text(
+            json.dumps({int(k): str(v) for k, v in names.items()}, indent=2) + "\n")
     (writer.dir / "modules.json").write_text(json.dumps(module_table(model, detect), indent=2) + "\n")
     (writer.dir / "attention.json").write_text(json.dumps(attn_meta, indent=2) + "\n")
     count, elems = dump_weights(writer, model)
