@@ -1,1 +1,0 @@
-{"name": "syn_attn_qkv", "shape": [1, 256, 16, 16], "dtype": "f32", "src": "synthetic Attention intermediate 'qkv'"}

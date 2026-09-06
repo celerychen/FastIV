@@ -1,0 +1,1 @@
+{"name": "linear_w", "shape": [1000, 1280], "dtype": "f32", "src": "head Linear weight [nc,1280]"}

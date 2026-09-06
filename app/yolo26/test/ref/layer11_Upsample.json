@@ -1,1 +1,0 @@
-{"name": "layer11_Upsample", "shape": [1, 256, 20, 20], "dtype": "f32", "src": "output of model.model[11] (Upsample)"}

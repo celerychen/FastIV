@@ -17,9 +17,9 @@
 
 #include <math.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
+#include "fiv_common.h"
 #include "fiv_nn.h"
 #include "fiv_nn_infer.h"
 #include "fiv_maxpool_node.h"
@@ -27,462 +27,700 @@
 #include "fiv_attention_node.h"
 #include "fiv_yolo26.h"
 
+/* Per-build state threaded through every block builder: the engine network,
+ * the fold table and its flat weight payloads, the folded attention weights,
+ * the next free node id and the per-layer output node ids. */
 typedef struct {
-    void*                     net;      /* engine network */
-    const yolo26_fold_entry*  fold;     /* fold table */
-    int                       n_fold;
-    const float*              fold_w;   /* concat payloads */
-    const float*              fold_b;
-    const float*              attn_w[2][6]; /* attn<i>: qkv_w,b,pe_w,b,proj_w,b */
-    int                       next;     /* next node id (0 = implicit input) */
-    int                       layer_out[24];
-} y26b;
+    void*                    net;         /* engine network */
+    const yolo26_fold_entry* fold;        /* fold table */
+    int                      fold_count;
+    const ivf32*             fold_w;      /* concatenated folded conv weights */
+    const ivf32*             fold_b;      /* concatenated folded conv biases */
+    const ivf32*             attn_w[2][6]; /* attn<id>: qkv_w, qkv_b, pe_w, pe_b, proj_w, proj_b */
+    int                      next_node;   /* next node id (0 = implicit input) */
+    int                      layer_out[24];
+} fiv_y26_builder;
 
-/* entry whose full path == model.<lay>.<rel>  (rel includes ".conv") */
-static const yolo26_fold_entry* y26_entry(const y26b* g, int lay, const char* rel)
+/* Entry whose full path equals model.<layer>.<rel_path>. */
+static const yolo26_fold_entry* fiv_y26_find_entry(const fiv_y26_builder* builder,
+                                                   int layer, const char* rel_path)
 {
-    char pat[256];
-    snprintf(pat, sizeof(pat), "model.%d.%s", lay, rel);
-    for (int i = 0; i < g->n_fold; i++)
-        if (g->fold[i].layer == lay && strcmp(g->fold[i].path, pat) == 0)
-            return &g->fold[i];
+    char pattern[256];
+    snprintf(pattern, sizeof(pattern), "model.%d.%s", layer, rel_path);
+    for (int idx = 0; idx < builder->fold_count; idx++) {
+        const yolo26_fold_entry* entry = &builder->fold[idx];
+        if (entry->layer == layer && strcmp(entry->path, pattern) == 0)
+            return entry;
+    }
     return NULL;
 }
 
-/* any entry of this layer under prefix "model.<lay>.<pref>" */
-static int y26_has(const y26b* g, int lay, const char* pref)
+/* Whether any fold entry of this layer sits under model.<layer>.<prefix>. */
+static int fiv_y26_has_entries(const fiv_y26_builder* builder, int layer,
+                               const char* prefix)
 {
-    char p[256];
-    snprintf(p, sizeof(p), "model.%d.%s", lay, pref);
-    size_t pl = strlen(p);
-    for (int i = 0; i < g->n_fold; i++)
-        if (g->fold[i].layer == lay && strncmp(g->fold[i].path, p, pl) == 0)
+    char pattern[256];
+    snprintf(pattern, sizeof(pattern), "model.%d.%s", layer, prefix);
+    size_t prefix_len = strlen(pattern);
+    for (int idx = 0; idx < builder->fold_count; idx++) {
+        const yolo26_fold_entry* entry = &builder->fold[idx];
+        if (entry->layer == layer && strncmp(entry->path, pattern, prefix_len) == 0)
             return 1;
+    }
     return 0;
 }
 
-static int y26_add_node(y26b* g, int type, int src, void* params)
+static int fiv_y26_add_node(fiv_y26_builder* builder, int node_type,
+                            int src_node, void* params)
 {
-    int id = g->next++;
-    return fiv_neural_network_add_node(g->net, type, src, id, params) == FIV_RET_OK ? id : -1;
+    int node_id = builder->next_node++;
+    return fiv_neural_network_add_node(builder->net, node_type, src_node,
+                                       node_id, params) == FIV_RET_OK ? node_id : -1;
 }
 
-static int y26_add_multi(y26b* g, int type, const int* srcs, int cnt, void* params)
+static int fiv_y26_add_multi(fiv_y26_builder* builder, int node_type,
+                             const int* src_nodes, int src_count, void* params)
 {
-    int id = g->next++;
-    return fiv_neural_network_add_node_multi(g->net, type, (int*)srcs, cnt, id, params) == FIV_RET_OK ? id : -1;
+    int node_id = builder->next_node++;
+    return fiv_neural_network_add_node_multi(builder->net, node_type, (int*)src_nodes,
+                                             src_count, node_id, params) == FIV_RET_OK
+               ? node_id : -1;
 }
 
-static int y26_add2(y26b* g, int a, int b)
+/* Element-wise ADD of two nodes. */
+static int fiv_y26_add_pair(fiv_y26_builder* builder, int left_node, int right_node)
 {
-    int srcs[2] = { a, b };
-    return y26_add_multi(g, FIV_NN_NODE_ADD, srcs, 2, NULL);
+    int fan_in[2] = { left_node, right_node };
+    return fiv_y26_add_multi(builder, FIV_NN_NODE_ADD, fan_in, 2, NULL);
 }
 
-static int y26_slice(y26b* g, int src, int c0, int c1)
+static int fiv_y26_add_slice(fiv_y26_builder* builder, int src_node,
+                             int ch_start, int ch_end)
 {
-    fiv_slice_node_params sp;
-    memset(&sp, 0, sizeof(sp));
-    sp.axis = 1;              /* 4D NCHW: axis 1 = channels */
-    sp.start = c0;
-    sp.end = c1;
-    return y26_add_node(g, FIV_NN_NODE_SLICE, src, &sp);
+    fiv_slice_node_params slice_params;
+    memset(&slice_params, 0, sizeof(slice_params));
+    slice_params.axis  = 1;         /* 4D NCHW: axis 1 = channels */
+    slice_params.start = ch_start;
+    slice_params.end   = ch_end;
+    return fiv_y26_add_node(builder, FIV_NN_NODE_SLICE, src_node, &slice_params);
 }
 
-static int y26_cat(y26b* g, const int* srcs, int cnt, int out_ch)
+static int fiv_y26_add_concat(fiv_y26_builder* builder, const int* src_nodes,
+                              int src_count, int out_channels)
 {
-    fiv_concat_node_params cp;
-    memset(&cp, 0, sizeof(cp));
-    cp.axis = 1;
-    cp.output_channels = out_ch;
-    return y26_add_multi(g, FIV_NN_NODE_CONCAT, srcs, cnt, &cp);
+    fiv_concat_node_params concat_params;
+    memset(&concat_params, 0, sizeof(concat_params));
+    concat_params.axis = 1;
+    concat_params.output_channels = out_channels;
+    return fiv_y26_add_multi(builder, FIV_NN_NODE_CONCAT, src_nodes,
+                             src_count, &concat_params);
 }
 
-/* one folded conv node (+ SiLU when the Conv wrapper has one) */
-static int y26_conv(y26b* g, int src, const yolo26_fold_entry* e)
+/* One folded conv node (+ SiLU node when the Conv wrapper carries one). */
+static int fiv_y26_add_conv(fiv_y26_builder* builder, int src_node,
+                            const yolo26_fold_entry* entry)
 {
-    int method, ntype;
-    if (e->g == 1 && e->k == 1)       { method = 2; ntype = FIV_NN_NODE_CONV2D_POINTWISE; }
-    else if (e->g == e->in_c)         { method = 1; ntype = FIV_NN_NODE_CONV2D_DEPTHWISE; }
-    else                              { method = 0; ntype = FIV_NN_NODE_CONV2D_STD; }
-
-    fiv_conv2d_params p;
-    memset(&p, 0, sizeof(p));
-    p.conv2d_method   = method;
-    p.kernel_size_x   = e->k;
-    p.kernel_size_y   = e->k;
-    p.stride          = e->s;
-    p.padding_method  = 0;
-    p.input_channels  = e->in_c;
-    p.output_channels = e->out_c;
-    p.bias            = 1;            /* folded bias always present */
-    p.pad_top = p.pad_bottom = p.pad_left = p.pad_right = e->p;
-
-    int id = g->next++;
-    if (fiv_neural_network_add_node(g->net, ntype, src, id, &p) != FIV_RET_OK)
-        return -1;
-    fiv_neural_network_set_node_weight(g->net, id, g->fold_w + e->w_off);
-    fiv_neural_network_set_node_bias(g->net, id, g->fold_b + e->b_off);
-    if (e->act == 1) {
-        int sid = g->next++;
-        if (fiv_neural_network_add_node(g->net, FIV_NN_NODE_SILU, id, sid, NULL) != FIV_RET_OK)
-            return -1;
-        return sid;
+    int conv_method;
+    int node_type;
+    if (entry->groups == 1 && entry->kernel == 1) {
+        conv_method = 2;
+        node_type   = FIV_NN_NODE_CONV2D_POINTWISE;
+    } else if (entry->groups == entry->input_channels) {
+        conv_method = 1;
+        node_type   = FIV_NN_NODE_CONV2D_DEPTHWISE;
+    } else {
+        conv_method = 0;
+        node_type   = FIV_NN_NODE_CONV2D_STD;
     }
-    return id;
+
+    fiv_conv2d_params conv_params;
+    memset(&conv_params, 0, sizeof(conv_params));
+    conv_params.conv2d_method   = conv_method;
+    conv_params.kernel_size_x   = entry->kernel;
+    conv_params.kernel_size_y   = entry->kernel;
+    conv_params.stride          = entry->stride;
+    conv_params.padding_method  = 0;
+    conv_params.input_channels  = entry->input_channels;
+    conv_params.output_channels = entry->output_channels;
+    conv_params.bias            = 1;            /* folded bias always present */
+    conv_params.pad_top = conv_params.pad_bottom = entry->padding;
+    conv_params.pad_left = conv_params.pad_right = entry->padding;
+
+    int node_id = builder->next_node++;
+    if (fiv_neural_network_add_node(builder->net, node_type, src_node,
+                                    node_id, &conv_params) != FIV_RET_OK)
+        return -1;
+    fiv_neural_network_set_node_weight(builder->net, node_id,
+                                       builder->fold_w + entry->w_off);
+    fiv_neural_network_set_node_bias(builder->net, node_id,
+                                     builder->fold_b + entry->b_off);
+    if (entry->act == 1) {
+        int silu_node_id = builder->next_node++;
+        if (fiv_neural_network_add_node(builder->net, FIV_NN_NODE_SILU,
+                                        node_id, silu_node_id, NULL) != FIV_RET_OK)
+            return -1;
+        return silu_node_id;
+    }
+    return node_id;
 }
 
-/* Bottleneck (module prefix like "m.0." or "m.0.0."): cv1 -> cv2 -> +src */
-static int y26_bottleneck(y26b* g, int lay, const char* mpref, int src)
+/* Bottleneck (module prefix like "m.0." or "m.0.0."): cv1 -> cv2 -> +src. */
+static int fiv_y26_add_bottleneck(fiv_y26_builder* builder, int layer,
+                                  const char* module_prefix, int src_node)
 {
-    char r1[160], r2[160];
-    snprintf(r1, sizeof(r1), "%scv1.conv", mpref);
-    snprintf(r2, sizeof(r2), "%scv2.conv", mpref);
-    const yolo26_fold_entry* e1 = y26_entry(g, lay, r1);
-    const yolo26_fold_entry* e2 = y26_entry(g, lay, r2);
-    if (!e1 || !e2) return -1;
-    int a = y26_conv(g, src, e1);
-    if (a < 0) return -1;
-    int b = y26_conv(g, a, e2);
-    if (b < 0) return -1;
-    return y26_add2(g, b, src);
+    char rel_cv1[160], rel_cv2[160];
+    snprintf(rel_cv1, sizeof(rel_cv1), "%scv1.conv", module_prefix);
+    snprintf(rel_cv2, sizeof(rel_cv2), "%scv2.conv", module_prefix);
+    const yolo26_fold_entry* entry_cv1 = fiv_y26_find_entry(builder, layer, rel_cv1);
+    const yolo26_fold_entry* entry_cv2 = fiv_y26_find_entry(builder, layer, rel_cv2);
+    if (!entry_cv1 || !entry_cv2) return -1;
+
+    int conv_a_node = fiv_y26_add_conv(builder, src_node, entry_cv1);
+    if (conv_a_node < 0) return -1;
+    int conv_b_node = fiv_y26_add_conv(builder, conv_a_node, entry_cv2);
+    if (conv_b_node < 0) return -1;
+    return fiv_y26_add_pair(builder, conv_b_node, src_node);
 }
 
-/* C3k composite at mpref "m.0." (cv1/cv2 parallel, inner m.0.m.<j>. chain, cv3) */
-static int y26_c3k_block(y26b* g, int lay, const char* mpref, int src)
+/* C3k composite block at module_prefix (cv1/cv2 parallel branches, inner
+ * m.<j>. bottleneck chain, then cv3). */
+static int fiv_y26_add_c3k_block(fiv_y26_builder* builder, int layer,
+                                 const char* module_prefix, int src_node)
 {
-    char r[160];
-    snprintf(r, sizeof(r), "%scv1.conv", mpref);
-    const yolo26_fold_entry* cv1 = y26_entry(g, lay, r);
-    snprintf(r, sizeof(r), "%scv2.conv", mpref);
-    const yolo26_fold_entry* cv2 = y26_entry(g, lay, r);
-    snprintf(r, sizeof(r), "%scv3.conv", mpref);
-    const yolo26_fold_entry* cv3 = y26_entry(g, lay, r);
-    if (!cv1 || !cv2 || !cv3) return -1;
+    char rel_path[160];
 
-    int b1 = y26_conv(g, src, cv1);                 /* m(cv1(x)) branch */
-    if (b1 < 0) return -1;
+    snprintf(rel_path, sizeof(rel_path), "%scv1.conv", module_prefix);
+    const yolo26_fold_entry* entry_cv1 = fiv_y26_find_entry(builder, layer, rel_path);
+    snprintf(rel_path, sizeof(rel_path), "%scv2.conv", module_prefix);
+    const yolo26_fold_entry* entry_cv2 = fiv_y26_find_entry(builder, layer, rel_path);
+    snprintf(rel_path, sizeof(rel_path), "%scv3.conv", module_prefix);
+    const yolo26_fold_entry* entry_cv3 = fiv_y26_find_entry(builder, layer, rel_path);
+    if (!entry_cv1 || !entry_cv2 || !entry_cv3) return -1;
+
+    int branch_a_node = fiv_y26_add_conv(builder, src_node, entry_cv1);
+    if (branch_a_node < 0) return -1;
     for (int j = 0; j < 8; j++) {
-        char inner[160];
-        snprintf(inner, sizeof(inner), "%sm.%d.", mpref, j);
-        if (!y26_has(g, lay, inner)) break;
-        b1 = y26_bottleneck(g, lay, inner, b1);
-        if (b1 < 0) return -1;
+        char inner_prefix[160];
+        snprintf(inner_prefix, sizeof(inner_prefix), "%sm.%d.", module_prefix, j);
+        if (!fiv_y26_has_entries(builder, layer, inner_prefix)) break;
+        branch_a_node = fiv_y26_add_bottleneck(builder, layer, inner_prefix, branch_a_node);
+        if (branch_a_node < 0) return -1;
     }
-    int b2 = y26_conv(g, src, cv2);                 /* cv2(x) parallel */
-    if (b2 < 0) return -1;
-    int s2[2] = { b1, b2 };
-    int cc = y26_cat(g, s2, 2, cv3->in_c);
-    if (cc < 0) return -1;
-    return y26_conv(g, cc, cv3);
+    int branch_b_node = fiv_y26_add_conv(builder, src_node, entry_cv2);
+    if (branch_b_node < 0) return -1;
+
+    int branch_srcs[2] = { branch_a_node, branch_b_node };
+    int cat_node = fiv_y26_add_concat(builder, branch_srcs, 2, entry_cv3->input_channels);
+    if (cat_node < 0) return -1;
+    return fiv_y26_add_conv(builder, cat_node, entry_cv3);
 }
 
-/* Attention composite node feeding from `src`; loads weights from attn_w[aidx] */
-static int y26_attn(y26b* g, int src, int aidx, int dim)
+/* Attention composite node feeding from src_node; weights loaded from
+ * builder->attn_w[attn_index]. */
+static int fiv_y26_add_attention(fiv_y26_builder* builder, int src_node,
+                                 int attn_index, int dim)
 {
-    fiv_attention_node_params ap;
-    memset(&ap, 0, sizeof(ap));
-    ap.dim = dim;
-    ap.num_heads = 2;
-    ap.head_dim  = dim / 2;
-    ap.key_dim   = ap.head_dim / 2;
-    ap.scale     = powf((float)ap.key_dim, -0.5f);
-    ap.pe_groups = dim;
-    int id = g->next++;
-    if (fiv_neural_network_add_node(g->net, FIV_NN_NODE_ATTENTION, src, id, &ap) != FIV_RET_OK)
+    fiv_attention_node_params attn_params;
+    memset(&attn_params, 0, sizeof(attn_params));
+    attn_params.dim       = dim;
+    attn_params.num_heads = 2;
+    attn_params.head_dim  = dim / 2;
+    attn_params.key_dim   = attn_params.head_dim / 2;
+    attn_params.scale     = powf((ivf32)attn_params.key_dim, -0.5f);
+    attn_params.pe_groups = dim;
+
+    int node_id = builder->next_node++;
+    if (fiv_neural_network_add_node(builder->net, FIV_NN_NODE_ATTENTION,
+                                    src_node, node_id, &attn_params) != FIV_RET_OK)
         return -1;
-    fiv_nn_node_context* nc = fiv_neural_network_get_node(g->net, id);
-    if (!nc || !nc->op) return -1;
-    const float** w = g->attn_w[aidx];
-    if (!w[0] || !w[1] || !w[2] || !w[3] || !w[4] || !w[5]) return -1;
-    if (fiv_attention_node_set_weights(nc->op, w[0], w[1], w[2], w[3], w[4], w[5]) != FIV_RET_OK)
+
+    fiv_nn_node_context* node_ctx = fiv_neural_network_get_node(builder->net, node_id);
+    if (!node_ctx || !node_ctx->op) return -1;
+
+    const ivf32** weights = builder->attn_w[attn_index];
+    for (int part = 0; part < 6; part++)
+        if (!weights[part]) return -1;
+    if (fiv_attention_node_set_weights(node_ctx->op,
+                                       weights[0], weights[1], weights[2],
+                                       weights[3], weights[4], weights[5]) != FIV_RET_OK)
         return -1;
-    return id;
+    return node_id;
 }
 
-/* PSABlock at stem "m.0." / "m.0.1.": x -> x + attn(x) -> ffn -> + that */
-static int y26_psa(y26b* g, int lay, const char* stem, int src, int aidx, int dim)
+/* PSABlock: out = x + ffn(x + attn(x)); module_prefix locates the ffn convs. */
+static int fiv_y26_add_psa_block(fiv_y26_builder* builder, int layer,
+                                 const char* module_prefix, int src_node,
+                                 int attn_index, int dim)
 {
-    char r0[160], r1[160];
-    snprintf(r0, sizeof(r0), "%sffn.0.conv", stem);
-    snprintf(r1, sizeof(r1), "%sffn.1.conv", stem);
-    const yolo26_fold_entry* f0 = y26_entry(g, lay, r0);
-    const yolo26_fold_entry* f1 = y26_entry(g, lay, r1);
-    if (!f0 || !f1) return -1;
-    int ax = y26_attn(g, src, aidx, dim);
-    if (ax < 0) return -1;
-    int t = y26_add2(g, ax, src);
-    if (t < 0) return -1;
-    int h0 = y26_conv(g, t, f0);
-    if (h0 < 0) return -1;
-    int h1 = y26_conv(g, h0, f1);
-    if (h1 < 0) return -1;
-    return y26_add2(g, h1, t);
+    char rel_path[160];
+
+    snprintf(rel_path, sizeof(rel_path), "%sffn.0.conv", module_prefix);
+    const yolo26_fold_entry* entry_ffn0 = fiv_y26_find_entry(builder, layer, rel_path);
+    snprintf(rel_path, sizeof(rel_path), "%sffn.1.conv", module_prefix);
+    const yolo26_fold_entry* entry_ffn1 = fiv_y26_find_entry(builder, layer, rel_path);
+    if (!entry_ffn0 || !entry_ffn1) return -1;
+
+    int attn_out_node = fiv_y26_add_attention(builder, src_node, attn_index, dim);
+    if (attn_out_node < 0) return -1;
+    int residual_node = fiv_y26_add_pair(builder, attn_out_node, src_node);
+    if (residual_node < 0) return -1;
+    int ffn0_node = fiv_y26_add_conv(builder, residual_node, entry_ffn0);
+    if (ffn0_node < 0) return -1;
+    int ffn1_node = fiv_y26_add_conv(builder, ffn0_node, entry_ffn1);
+    if (ffn1_node < 0) return -1;
+    return fiv_y26_add_pair(builder, ffn1_node, residual_node);
 }
 
-/* Sequential module (attn variant, L22): m.<k>.0 bottleneck then m.<k>.1 psa */
-static int y26_module(y26b* g, int lay, const char* mpref, int src)
+/* C3k2 (C2f semantics): cv1 -> slice a|b -> module chain on b -> cat -> cv2.
+ * The attn variant (layer 22) is a Sequential(Bottleneck, PSABlock) handled
+ * explicitly here; all other layers carry plain Bottleneck or C3k modules. */
+static int fiv_y26_add_c3k2(fiv_y26_builder* builder, int layer, int src_node)
 {
-    char probe[160];
-    snprintf(probe, sizeof(probe), "%scv3", mpref);
-    if (y26_has(g, lay, probe))
-        return y26_c3k_block(g, lay, mpref, src);          /* C3k composite */
-    snprintf(probe, sizeof(probe), "%s0.", mpref);
-    if (y26_has(g, lay, probe)) {                          /* Sequential children */
-        int cur = src;
-        for (int j = 0; j < 8; j++) {
-            char child[160], p2[160];
-            snprintf(child, sizeof(child), "%s%d.", mpref, j);
-            if (!y26_has(g, lay, child)) break;
-            snprintf(p2, sizeof(p2), "%scv1", child);
-            if (y26_has(g, lay, p2)) {
-                cur = y26_bottleneck(g, lay, child, cur);
-            } else {
-                snprintf(p2, sizeof(p2), "%sffn.0", child);
-                if (y26_has(g, lay, p2)) {
-                    int half = 0;                          /* dim passed by caller via closure below */
-                    (void)half;
-                    cur = y26_psa(g, lay, child, cur, 1, 0);
-                }
-            }
-            if (cur < 0) return -1;
-        }
-        return cur;
-    }
-    return y26_bottleneck(g, lay, mpref, src);             /* plain Bottleneck */
-}
+    const yolo26_fold_entry* entry_cv1 = fiv_y26_find_entry(builder, layer, "cv1.conv");
+    const yolo26_fold_entry* entry_cv2 = fiv_y26_find_entry(builder, layer, "cv2.conv");
+    if (!entry_cv1 || !entry_cv2) return -1;
 
-/* C3k2 (C2f semantics): cv1 -> slice a|b -> module chain on b -> cat -> cv2 */
-static int y26_c3k2(y26b* g, int lay, int src)
-{
-    const yolo26_fold_entry* cv1 = y26_entry(g, lay, "cv1.conv");
-    const yolo26_fold_entry* cv2 = y26_entry(g, lay, "cv2.conv");
-    if (!cv1 || !cv2) return -1;
-    int half = cv1->out_c / 2;
-    int dim  = half;
-    int v1 = y26_conv(g, src, cv1);
-    if (v1 < 0) return -1;
-    int a = y26_slice(g, v1, 0, half);
-    int b = y26_slice(g, v1, half, cv1->out_c);
-    if (a < 0 || b < 0) return -1;
+    int half_ch = entry_cv1->output_channels / 2;
+    int conv1_node = fiv_y26_add_conv(builder, src_node, entry_cv1);
+    if (conv1_node < 0) return -1;
+    int slice_a_node = fiv_y26_add_slice(builder, conv1_node, 0, half_ch);
+    int slice_b_node = fiv_y26_add_slice(builder, conv1_node, half_ch, entry_cv1->output_channels);
+    if (slice_a_node < 0 || slice_b_node < 0) return -1;
 
-    /* dispatch any inner PSA on dim: L22 psa is at m.0.1 */
-    static int    psa_done = 0;   /* placeholder guard, unused */
-    (void)psa_done;
-    int cur = b;
-    int chain[16], cnt = 0;
-    chain[cnt++] = b;
+    int cur_node = slice_b_node;
+    int module_chain[16];
+    int chain_count = 1;                       /* cat keeps b itself */
+    module_chain[0] = slice_b_node;
+
     for (int k = 0; k < 8; k++) {
-        char mpref[64];
-        snprintf(mpref, sizeof(mpref), "m.%d.", k);
-        if (!y26_has(g, lay, mpref)) break;
-        /* per-layer attention dim for an inner PSABlock (only L22 has one) */
-        if (lay == 22 && k == 0) {
-            /* rebuild manually: bottleneck m.0.0 then psa m.0.1 */
-            int inner = cur;
+        char module_prefix[64];
+        snprintf(module_prefix, sizeof(module_prefix), "m.%d.", k);
+        if (!fiv_y26_has_entries(builder, layer, module_prefix)) break;
+        if (layer == 22 && k == 0) {
+            /* attn variant: m.0 = Sequential(Bottleneck m.0.0, PSABlock m.0.1). */
+            int inner_node = cur_node;
             for (int j = 0; j < 8; j++) {
-                char child[96], probe[96];
-                snprintf(child, sizeof(child), "m.%d.%d.", k, j);
-                if (!y26_has(g, lay, child)) break;
-                snprintf(probe, sizeof(probe), "%scv1", child);
-                if (y26_has(g, lay, probe))
-                    inner = y26_bottleneck(g, lay, child, inner);
+                char child_prefix[96], probe[96];
+                snprintf(child_prefix, sizeof(child_prefix), "m.%d.%d.", k, j);
+                if (!fiv_y26_has_entries(builder, layer, child_prefix)) break;
+                snprintf(probe, sizeof(probe), "%scv1", child_prefix);
+                if (fiv_y26_has_entries(builder, layer, probe))
+                    inner_node = fiv_y26_add_bottleneck(builder, layer, child_prefix, inner_node);
                 else
-                    inner = y26_psa(g, lay, child, inner, 1, dim);
-                if (inner < 0) return -1;
+                    inner_node = fiv_y26_add_psa_block(builder, layer, child_prefix,
+                                                       inner_node, 1, half_ch);
+                if (inner_node < 0) return -1;
             }
-            cur = inner;
+            cur_node = inner_node;
         } else {
-            cur = y26_module(g, lay, mpref, cur);
+            /* plain Bottleneck chain or single C3k module */
+            char probe_cv3[96];
+            snprintf(probe_cv3, sizeof(probe_cv3), "%scv3", module_prefix);
+            if (fiv_y26_has_entries(builder, layer, probe_cv3)) {
+                cur_node = fiv_y26_add_c3k_block(builder, layer, module_prefix, cur_node);
+            } else {
+                cur_node = fiv_y26_add_bottleneck(builder, layer, module_prefix, cur_node);
+            }
         }
-        if (cur < 0) return -1;
-        chain[cnt++] = cur;
+        if (cur_node < 0) return -1;
+        module_chain[chain_count++] = cur_node;
     }
-    int srcs[16];
-    srcs[0] = a;
-    for (int i = 0; i < cnt; i++) srcs[1 + i] = chain[i];
-    int cc = y26_cat(g, srcs, 1 + cnt, cv2->in_c);
-    if (cc < 0) return -1;
-    return y26_conv(g, cc, cv2);
+
+    int concat_srcs[16];
+    concat_srcs[0] = slice_a_node;
+    for (int i = 0; i < chain_count; i++) concat_srcs[1 + i] = module_chain[i];
+    int cat_node = fiv_y26_add_concat(builder, concat_srcs, 1 + chain_count, entry_cv2->input_channels);
+    if (cat_node < 0) return -1;
+    return fiv_y26_add_conv(builder, cat_node, entry_cv2);
 }
 
-/* SPPF: cv1(1x1,act0) -> 3x maxpool(k5 s1 p2) chain -> cat 4 -> cv2(1x1) -> (+x) */
-static int y26_sppf(y26b* g, int lay, int src)
+/* SPPF: cv1(1x1, no act) -> 3x maxpool(k5 s1 p2) chain -> cat 4 -> cv2 -> +x. */
+static int fiv_y26_add_sppf(fiv_y26_builder* builder, int layer, int src_node)
 {
-    const yolo26_fold_entry* cv1 = y26_entry(g, lay, "cv1.conv");
-    const yolo26_fold_entry* cv2 = y26_entry(g, lay, "cv2.conv");
-    if (!cv1 || !cv2) return -1;
-    int v1 = y26_conv(g, src, cv1);
-    if (v1 < 0) return -1;
+    const yolo26_fold_entry* entry_cv1 = fiv_y26_find_entry(builder, layer, "cv1.conv");
+    const yolo26_fold_entry* entry_cv2 = fiv_y26_find_entry(builder, layer, "cv2.conv");
+    if (!entry_cv1 || !entry_cv2) return -1;
 
-    fiv_maxpool_node_params mp;
-    memset(&mp, 0, sizeof(mp));
-    mp.kernel_size_x = 5; mp.kernel_size_y = 5; mp.stride = 1;
-    mp.pad_top = mp.pad_bottom = mp.pad_left = mp.pad_right = 2;
-    int mids[3], prev = v1;
+    int conv1_node = fiv_y26_add_conv(builder, src_node, entry_cv1);
+    if (conv1_node < 0) return -1;
+
+    fiv_maxpool_node_params pool_params;
+    memset(&pool_params, 0, sizeof(pool_params));
+    pool_params.kernel_size_x = 5;
+    pool_params.kernel_size_y = 5;
+    pool_params.stride        = 1;
+    pool_params.pad_top       = 2;
+    pool_params.pad_bottom    = 2;
+    pool_params.pad_left      = 2;
+    pool_params.pad_right     = 2;
+
+    int pool_nodes[3];
+    int prev_node = conv1_node;
     for (int i = 0; i < 3; i++) {
-        int mid = g->next++;
-        if (fiv_neural_network_add_node(g->net, FIV_NN_NODE_MAXPOOL, prev, mid, &mp) != FIV_RET_OK)
+        int pool_node = builder->next_node++;
+        if (fiv_neural_network_add_node(builder->net, FIV_NN_NODE_MAXPOOL,
+                                        prev_node, pool_node, &pool_params) != FIV_RET_OK)
             return -1;
-        mids[i] = mid;
-        prev = mid;
+        pool_nodes[i] = pool_node;
+        prev_node     = pool_node;
     }
-    int s4[4] = { v1, mids[0], mids[1], mids[2] };
-    int cc = y26_cat(g, s4, 4, cv2->in_c);
-    if (cc < 0) return -1;
-    int v2 = y26_conv(g, cc, cv2);
-    if (v2 < 0) return -1;
-    if (cv1->in_c == cv2->out_c) {              /* add residual */
-        int ad = y26_add2(g, v2, src);
-        if (ad < 0) return -1;
-        return ad;
+
+    int pool_srcs[4] = { conv1_node, pool_nodes[0], pool_nodes[1], pool_nodes[2] };
+    int cat_node = fiv_y26_add_concat(builder, pool_srcs, 4, entry_cv2->input_channels);
+    if (cat_node < 0) return -1;
+
+    int conv2_node = fiv_y26_add_conv(builder, cat_node, entry_cv2);
+    if (conv2_node < 0) return -1;
+    if (entry_cv1->input_channels == entry_cv2->output_channels) {   /* shortcut residual */
+        int add_node = fiv_y26_add_pair(builder, conv2_node, src_node);
+        if (add_node < 0) return -1;
+        return add_node;
     }
-    return v2;
+    return conv2_node;
 }
 
-/* C2PSA: cv1 -> slice a|b -> b=m.0 PSABlock(attn0) -> cat([a,psa]) -> cv2 */
-static int y26_c2psa(y26b* g, int lay, int src)
+/* C2PSA: cv1 -> slice a|b -> b = m.0 PSABlock(attn0) -> cat([a, psa]) -> cv2. */
+static int fiv_y26_add_c2psa(fiv_y26_builder* builder, int layer, int src_node)
 {
-    const yolo26_fold_entry* cv1 = y26_entry(g, lay, "cv1.conv");
-    const yolo26_fold_entry* cv2 = y26_entry(g, lay, "cv2.conv");
-    if (!cv1 || !cv2) return -1;
-    int half = cv1->out_c / 2;
-    int v1 = y26_conv(g, src, cv1);
-    if (v1 < 0) return -1;
-    int a = y26_slice(g, v1, 0, half);
-    int b = y26_slice(g, v1, half, cv1->out_c);
-    if (a < 0 || b < 0) return -1;
-    int m = y26_psa(g, lay, "m.0.", b, 0, half);
-    if (m < 0) return -1;
-    int s2[2] = { a, m };
-    int cc = y26_cat(g, s2, 2, cv2->in_c);
-    if (cc < 0) return -1;
-    return y26_conv(g, cc, cv2);
+    const yolo26_fold_entry* entry_cv1 = fiv_y26_find_entry(builder, layer, "cv1.conv");
+    const yolo26_fold_entry* entry_cv2 = fiv_y26_find_entry(builder, layer, "cv2.conv");
+    if (!entry_cv1 || !entry_cv2) return -1;
+
+    int half_ch = entry_cv1->output_channels / 2;
+    int conv1_node = fiv_y26_add_conv(builder, src_node, entry_cv1);
+    if (conv1_node < 0) return -1;
+    int slice_a_node = fiv_y26_add_slice(builder, conv1_node, 0, half_ch);
+    int slice_b_node = fiv_y26_add_slice(builder, conv1_node, half_ch, entry_cv1->output_channels);
+    if (slice_a_node < 0 || slice_b_node < 0) return -1;
+
+    int psa_node = fiv_y26_add_psa_block(builder, layer, "m.0.", slice_b_node, 0, half_ch);
+    if (psa_node < 0) return -1;
+
+    int cat_srcs[2] = { slice_a_node, psa_node };
+    int cat_node = fiv_y26_add_concat(builder, cat_srcs, 2, entry_cv2->input_channels);
+    if (cat_node < 0) return -1;
+    return fiv_y26_add_conv(builder, cat_node, entry_cv2);
 }
 
-/* top-level plain Conv layer: single folded conv at model.<lay>.conv */
-static int y26_topconv(y26b* g, int lay, int src)
+/* Top-level plain Conv layer: the single folded conv at model.<layer>.conv. */
+static int fiv_y26_add_top_conv(fiv_y26_builder* builder, int layer, int src_node)
 {
-    const yolo26_fold_entry* e = y26_entry(g, lay, "conv");
-    if (!e) return -1;
-    return y26_conv(g, src, e);
+    const yolo26_fold_entry* entry = fiv_y26_find_entry(builder, layer, "conv");
+    if (!entry) return -1;
+    return fiv_y26_add_conv(builder, src_node, entry);
 }
 
-/* Detect one2one head convs on feature node `feat`, one per level */
-static int y26_head_chain(y26b* g, int feat, const char* branch, int lvl)
+/* Detect one2one head convs on a feature node, one chain per level. */
+static int fiv_y26_add_head_chain(fiv_y26_builder* builder, int feature_node,
+                                  const char* branch_name, int level)
 {
-    /* match "one2one_cv2.<lvl>" as a bare substring: the chain's tail is a
-       plain nn.Conv2d whose fold path has NO ".conv" suffix, so a key ending
-       in "." would silently skip it. Prefix "one2one_cv2.<lvl>" is unique per
-       level (".0" / ".1" / ".2"), so no ambiguity. */
+    /* Match "one2one_cv2.<level>" as a bare substring: the chain tail is a
+     * plain nn.Conv2d whose fold path has NO ".conv" suffix, so a key ending
+     * in "." would silently skip it. The prefix is unique per level. */
     char key[48];
-    snprintf(key, sizeof(key), "%s.%d", branch, lvl);
-    int cur = feat;
-    int built = 0;
-    for (int i = 0; i < g->n_fold; i++) {
-        const yolo26_fold_entry* e = &g->fold[i];
-        if (e->layer != 23) continue;
-        if (strstr(e->path, key) == NULL) continue;
-        cur = y26_conv(g, cur, e);
-        if (cur < 0) return -1;
-        built++;
+    snprintf(key, sizeof(key), "%s.%d", branch_name, level);
+
+    int cur_node   = feature_node;
+    int conv_count = 0;
+    for (int idx = 0; idx < builder->fold_count; idx++) {
+        const yolo26_fold_entry* entry = &builder->fold[idx];
+        if (entry->layer != 23) continue;
+        if (strstr(entry->path, key) == NULL) continue;
+        cur_node = fiv_y26_add_conv(builder, cur_node, entry);
+        if (cur_node < 0) return -1;
+        conv_count++;
     }
-    return built > 0 ? cur : -1;
+    return conv_count > 0 ? cur_node : -1;
+}
+
+/* Pose26 kpt branch: one2one_cv4.<level> (two 3x3 -> 85ch convs, SiLU) then
+ * one2one_cv4_kpts.<level> (1x1 85->51, no act). The kpts 1x1 conv consumes the
+ * cv4 output (NOT the feature map), so cv4 must be chained first. */
+static int fiv_y26_add_pose_kpt_chain(fiv_y26_builder* builder, int feature_node,
+                                      int level)
+{
+    char pattern[96];
+    int  cur_node = feature_node;
+    int  conv_count = 0;
+
+    snprintf(pattern, sizeof(pattern), "one2one_cv4.%d.", level);
+    for (int idx = 0; idx < builder->fold_count; idx++) {
+        const yolo26_fold_entry* entry = &builder->fold[idx];
+        if (entry->layer != 23) continue;
+        if (strstr(entry->path, pattern) == NULL) continue;
+        if (strstr(entry->path, "one2one_cv4_kpts") != NULL) continue; /* kpts/sigma excluded */
+        if (strstr(entry->path, "cv4_sigma") != NULL) continue;
+        cur_node = fiv_y26_add_conv(builder, cur_node, entry);
+        if (cur_node < 0) return -1;
+        conv_count++;
+    }
+    if (conv_count == 0) return -1;
+
+    /* The kpts head is a bare nn.Conv2d (fold path has no ".conv" suffix), so
+     * the key must be a bare substring without a trailing dot. */
+    snprintf(pattern, sizeof(pattern), "one2one_cv4_kpts.%d", level);
+    conv_count = 0;
+    for (int idx = 0; idx < builder->fold_count; idx++) {
+        const yolo26_fold_entry* entry = &builder->fold[idx];
+        if (entry->layer != 23) continue;
+        if (strstr(entry->path, pattern) == NULL) continue;
+        if (strstr(entry->path, "cv4_sigma") != NULL) continue;
+        cur_node = fiv_y26_add_conv(builder, cur_node, entry);
+        if (cur_node < 0) return -1;
+        conv_count++;
+    }
+    return conv_count > 0 ? cur_node : -1;
 }
 
 fiv_yolo26_graph* fiv_yolo26_build(const yolo26_fold_entry* fold, int fold_count,
-                                   const float* fold_w, const float* fold_b,
-                                   const float* attn[2][6])
+                                   const ivf32* fold_w, const ivf32* fold_b,
+                                   const ivf32* attn[2][6])
 {
     if (!fold || !fold_w || !fold_b || !attn) return NULL;
     for (int i = 0; i < 2; i++)
         for (int j = 0; j < 6; j++)
             if (!attn[i][j]) return NULL;
 
-    fiv_yolo26_graph* graph = (fiv_yolo26_graph*)calloc(1, sizeof(fiv_yolo26_graph));
+    fiv_yolo26_graph* graph = (fiv_yolo26_graph*)fiv_calloc(1, sizeof(fiv_yolo26_graph));
     if (!graph) return NULL;
+
     void* net = fiv_create_neural_network();
-    if (!net) { free(graph); return NULL; }
+    if (!net) {
+        fiv_free(graph);
+        return NULL;
+    }
 
-    y26b g;
-    memset(&g, 0, sizeof(g));
-    g.net = net;
-    g.fold = fold;
-    g.n_fold = fold_count;
-    g.fold_w = fold_w;
-    g.fold_b = fold_b;
-    memcpy(g.attn_w, attn, sizeof(g.attn_w));
-    g.next = 1;
+    fiv_y26_builder builder;
+    memset(&builder, 0, sizeof(builder));
+    builder.net        = net;
+    builder.fold       = fold;
+    builder.fold_count = fold_count;
+    builder.fold_w     = fold_w;
+    builder.fold_b     = fold_b;
+    memcpy(builder.attn_w, attn, sizeof(builder.attn_w));
+    builder.next_node = 1;
 
-    for (int i = 0; i < 24; i++) g.layer_out[i] = -1;
-    for (int i = 0; i < 3; i++) graph->mask_node[i] = -1;
+    for (int i = 0; i < 24; i++) builder.layer_out[i] = -1;
+    for (int i = 0; i < 3; i++) {
+        graph->mask_node[i] = -1;
+        graph->kpt_node[i]  = -1;
+    }
 
-    int rc = 0;
-    for (int i = 0; i < 23; i++) {
-        int out_id = -1;
-        if (i == 12 || i == 15 || i == 18 || i == 21) {
-            /* Concat: fan-in from two prior layer outputs; consumed by next C3k2. */
-            int a = (i == 12) ? 11 : (i == 15) ? 14 : (i == 18) ? 17 : 20;
-            int b = (i == 12) ? 6  : (i == 15) ? 4  : (i == 18) ? 13 : 10;
-            if (g.layer_out[a] < 0 || g.layer_out[b] < 0) { rc = -1; break; }
-            int s2[2] = { g.layer_out[a], g.layer_out[b] };
-            const yolo26_fold_entry* nx = y26_entry(&g, i + 1, "cv1.conv");
-            if (!nx) { rc = -1; break; }
-            out_id = y26_cat(&g, s2, 2, nx->in_c);
-            if (out_id < 0) { rc = -1; break; }
-            g.layer_out[i] = out_id;
+    /* ---- backbone + neck: layers 0..22 ---- */
+    for (int layer = 0; layer < 23; layer++) {
+        int out_node = -1;
+
+        if (layer == 12 || layer == 15 || layer == 18 || layer == 21) {
+            /* Concat: fan-in from two earlier layer outputs, consumed by the
+             * following C3k2 (whose cv1 input channels fix the concat size). */
+            int src_a_layer = (layer == 12) ? 11 : (layer == 15) ? 14 : (layer == 18) ? 17 : 20;
+            int src_b_layer = (layer == 12) ? 6  : (layer == 15) ? 4  : (layer == 18) ? 13 : 10;
+            if (builder.layer_out[src_a_layer] < 0 || builder.layer_out[src_b_layer] < 0)
+                goto fail;
+            int fan_in[2] = { builder.layer_out[src_a_layer], builder.layer_out[src_b_layer] };
+            const yolo26_fold_entry* next_entry = fiv_y26_find_entry(&builder, layer + 1, "cv1.conv");
+            if (!next_entry) goto fail;
+            out_node = fiv_y26_add_concat(&builder, fan_in, 2, next_entry->input_channels);
+            if (out_node < 0) goto fail;
+            builder.layer_out[layer] = out_node;
             continue;
         }
-        if (i != 0) {
-            if (g.layer_out[i - 1] < 0) { rc = -1; break; }
-        }
-        int src = (i == 0) ? 0 : g.layer_out[i - 1];
-        switch (i) {
-        case 0: case 1: case 3: case 5: case 7: case 17: case 20:
-            out_id = y26_topconv(&g, i, src); break;
-        case 2: case 4: case 6: case 8: case 13: case 16: case 19:
-            out_id = y26_c3k2(&g, i, src); break;
-        case 22:
-            out_id = y26_c3k2(&g, i, src); break;
-        case 9:
-            out_id = y26_sppf(&g, i, src); break;
-        case 10:
-            out_id = y26_c2psa(&g, i, src); break;
-        case 11: case 14:
-            out_id = y26_add_node(&g, FIV_NN_NODE_UPSAMPLE2X, src, NULL); break;
-        default:
-            rc = -1; break;
-        }
-        if (rc != 0 || out_id < 0) { rc = -1; break; }
-        g.layer_out[i] = out_id;
-    }
-    if (rc != 0) { fiv_release_neural_network(&net); free(graph); return NULL; }
 
-    /* Detect one2one heads on features [L16, L19, L22] */
-    int feat[3] = { g.layer_out[16], g.layer_out[19], g.layer_out[22] };
-    for (int lvl = 0; lvl < 3; lvl++) {
-        int bb = y26_head_chain(&g, feat[lvl], "one2one_cv2", lvl);
-        int cc = y26_head_chain(&g, feat[lvl], "one2one_cv3", lvl);
-        if (bb < 0 || cc < 0) { rc = -1; break; }
-        graph->head_node[lvl]     = bb;
-        graph->head_node[3 + lvl] = cc;
+        if (layer != 0 && builder.layer_out[layer - 1] < 0)
+            goto fail;
+        int src_node = (layer == 0) ? 0 : builder.layer_out[layer - 1];
+
+        switch (layer) {
+        case 0: case 1: case 3: case 5: case 7: case 17: case 20:
+            out_node = fiv_y26_add_top_conv(&builder, layer, src_node);
+            break;
+        case 2: case 4: case 6: case 8: case 13: case 16: case 19: case 22:
+            out_node = fiv_y26_add_c3k2(&builder, layer, src_node);
+            break;
+        case 9:
+            out_node = fiv_y26_add_sppf(&builder, layer, src_node);
+            break;
+        case 10:
+            out_node = fiv_y26_add_c2psa(&builder, layer, src_node);
+            break;
+        case 11: case 14:
+            out_node = fiv_y26_add_node(&builder, FIV_NN_NODE_UPSAMPLE2X, src_node, NULL);
+            break;
+        default:
+            goto fail;
+        }
+        if (out_node < 0) goto fail;
+        builder.layer_out[layer] = out_node;
     }
-    /* Segment26 one2one_cv4 (mask coef) branch - only present in seg fold tables */
-    for (int lvl = 0; lvl < 3; lvl++) {
-        int mk = y26_head_chain(&g, feat[lvl], "one2one_cv4", lvl);
-        if (mk < 0) break;          /* absent in detection: leave -1 and stop */
-        graph->mask_node[lvl] = mk;
+
+    /* ---- Detect one2one heads on features [L16, L19, L22] ---- */
+    {
+        int feature_nodes[3] = { builder.layer_out[16], builder.layer_out[19], builder.layer_out[22] };
+        for (int level = 0; level < 3; level++) {
+            int box_node = fiv_y26_add_head_chain(&builder, feature_nodes[level],
+                                                  "one2one_cv2", level);
+            int cls_node = fiv_y26_add_head_chain(&builder, feature_nodes[level],
+                                                  "one2one_cv3", level);
+            if (box_node < 0 || cls_node < 0) goto fail;
+            graph->head_node[level]     = box_node;
+            graph->head_node[3 + level] = cls_node;
+        }
+
+        /* Segment26 one2one_cv4 (mask coef) branch - only in seg fold tables. */
+        for (int level = 0; level < 3; level++) {
+            int mask_node = fiv_y26_add_head_chain(&builder, feature_nodes[level],
+                                                   "one2one_cv4", level);
+            if (mask_node < 0) break;             /* absent in detection: leave -1 */
+            graph->mask_node[level] = mask_node;
+        }
+
+        /* Pose26 one2one_cv4_kpts branch - only in pose fold tables. */
+        for (int level = 0; level < 3; level++) {
+            int kpt_node = fiv_y26_add_pose_kpt_chain(&builder, feature_nodes[level], level);
+            if (kpt_node < 0) break;              /* absent in detection/seg: leave -1 */
+            graph->kpt_node[level] = kpt_node;
+        }
     }
-    if (rc != 0) { fiv_release_neural_network(&net); free(graph); return NULL; }
 
     graph->net = net;
-    memcpy(graph->layer_node, g.layer_out, sizeof(g.layer_out));
+    memcpy(graph->layer_node, builder.layer_out, sizeof(builder.layer_out));
     return graph;
+
+fail:
+    fiv_release_neural_network(&net);
+    fiv_free(graph);
+    return NULL;
 }
 
 void fiv_yolo26_release(fiv_yolo26_graph* graph)
 {
     if (!graph) return;
     if (graph->net) fiv_release_neural_network(&graph->net);
-    free(graph);
+    fiv_free(graph);
 }
+
+/* Add a folded 1x1 pointwise conv fed by raw weight/bias arrays (used for the
+ * Classify head conv which is not part of the fold table). */
+static int fiv_y26_add_head_conv(fiv_y26_builder* builder, int src_node,
+                                 const ivf32* head_w, const ivf32* head_b,
+                                 int input_channels, int output_channels)
+{
+    fiv_conv2d_params params;
+    memset(&params, 0, sizeof(params));
+    params.conv2d_method   = 2;   /* FIV_CONV2D_POINTWISE */
+    params.kernel_size_x   = 1;
+    params.kernel_size_y   = 1;
+    params.stride          = 1;
+    params.padding_method  = 0;
+    params.input_channels  = input_channels;
+    params.output_channels = output_channels;
+    params.bias            = 1;
+
+    int conv_node = builder->next_node++;
+    if (fiv_neural_network_add_node(builder->net, FIV_NN_NODE_CONV2D_POINTWISE,
+                                    src_node, conv_node, &params) != FIV_RET_OK)
+        return -1;
+    fiv_neural_network_set_node_weight(builder->net, conv_node, head_w);
+    fiv_neural_network_set_node_bias(builder->net, conv_node, head_b);
+
+    int silu_node = builder->next_node++;
+    if (fiv_neural_network_add_node(builder->net, FIV_NN_NODE_SILU,
+                                    conv_node, silu_node, NULL) != FIV_RET_OK)
+        return -1;
+    return silu_node;
+}
+
+fiv_yolo26_graph* fiv_yolo26_build_classifier(const yolo26_fold_entry* fold,
+                                              int fold_count,
+                                              const ivf32* fold_w,
+                                              const ivf32* fold_b,
+                                              const ivf32* attn[2][6],
+                                              const ivf32* head_conv_w,
+                                              const ivf32* head_conv_b,
+                                              int head_output_channels)
+{
+    if (!fold || !fold_w || !fold_b || !attn || !head_conv_w || !head_conv_b)
+        return NULL;
+    /* yolo26-cls has a single C2PSA (layer 9) which uses only Attention 0. */
+    for (int j = 0; j < 6; j++)
+        if (!attn[0][j]) return NULL;
+
+    fiv_yolo26_graph* graph = (fiv_yolo26_graph*)fiv_calloc(1, sizeof(fiv_yolo26_graph));
+    if (!graph) return NULL;
+
+    void* net = fiv_create_neural_network();
+    if (!net) {
+        fiv_free(graph);
+        return NULL;
+    }
+
+    fiv_y26_builder builder;
+    memset(&builder, 0, sizeof(builder));
+    builder.net        = net;
+    builder.fold       = fold;
+    builder.fold_count = fold_count;
+    builder.fold_w     = fold_w;
+    builder.fold_b     = fold_b;
+    memcpy(builder.attn_w, attn, sizeof(builder.attn_w));
+    builder.next_node = 1;
+
+    for (int i = 0; i < 24; i++) builder.layer_out[i] = -1;
+    for (int i = 0; i < 3; i++) {
+        graph->mask_node[i] = -1;
+        graph->kpt_node[i]  = -1;
+    }
+
+    /* yolo26-cls: 0..8 backbone (Conv at 0/1/3/5/7, C3k2 at 2/4/6/8),
+     * 9 = C2PSA, 10 = Classify head conv (raw weights, not in fold). */
+    int output_channels = 0;
+    for (int layer = 0; layer < 9; layer++) {
+        if (layer != 0 && builder.layer_out[layer - 1] < 0)
+            goto fail;
+        int src_node = (layer == 0) ? 0 : builder.layer_out[layer - 1];
+        int out_node = -1;
+        switch (layer) {
+        case 0: case 1: case 3: case 5: case 7:
+            out_node = fiv_y26_add_top_conv(&builder, layer, src_node);
+            break;
+        case 2: case 4: case 6: case 8:
+            out_node = fiv_y26_add_c3k2(&builder, layer, src_node);
+            break;
+        default:
+            goto fail;
+        }
+        if (out_node < 0) goto fail;
+        builder.layer_out[layer] = out_node;
+        if (layer == 8) {
+            const yolo26_fold_entry* entry = fiv_y26_find_entry(&builder, 8, "cv2.conv");
+            if (!entry) goto fail;
+            output_channels = entry->output_channels;
+        }
+    }
+
+    /* layer 9 = C2PSA on the layer-8 output. */
+    int c2psa_node = fiv_y26_add_c2psa(&builder, 9, builder.layer_out[8]);
+    if (c2psa_node < 0) goto fail;
+    builder.layer_out[9] = c2psa_node;
+
+    /* layer 10 = Classify head conv 1x1: in = C2PSA out channels. */
+    const yolo26_fold_entry* c2psa_entry = fiv_y26_find_entry(&builder, 9, "cv2.conv");
+    if (!c2psa_entry) goto fail;
+    int input_channels = c2psa_entry->output_channels;
+
+    int head_node = fiv_y26_add_head_conv(&builder, c2psa_node, head_conv_w,
+                                          head_conv_b, input_channels,
+                                          head_output_channels);
+    if (head_node < 0) goto fail;
+    builder.layer_out[10] = head_node;
+    (void)output_channels;
+
+    graph->net = net;
+    memcpy(graph->layer_node, builder.layer_out, sizeof(builder.layer_out));
+    return graph;
+
+fail:
+    fiv_release_neural_network(&net);
+    fiv_free(graph);
+    return NULL;
+}
+

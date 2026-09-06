@@ -1,1 +1,0 @@
-{"name": "syn_attn_in", "shape": [1, 128, 16, 16], "dtype": "f32", "src": "synthetic Attention input x [1,128,16,16], N=256"}

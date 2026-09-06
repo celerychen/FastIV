@@ -1,1 +1,0 @@
-{"name": "layer09_SPPF", "shape": [1, 256, 10, 10], "dtype": "f32", "src": "output of model.model[9] (SPPF)"}

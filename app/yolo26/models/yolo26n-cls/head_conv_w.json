@@ -1,0 +1,1 @@
+{"name": "head_conv_w", "shape": [1280, 256, 1, 1], "dtype": "f32", "src": "cls head Conv BN-folded weight [1280,256,1,1]"}

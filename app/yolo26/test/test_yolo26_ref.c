@@ -7,6 +7,7 @@
  * (Wired into the project Makefile as test_yolo26_ref in P1.) */
 
 #include "yolo26_ref.h"
+#include "fiv_common.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,34 +23,34 @@ static int g_fail = 0;
         }                                                        \
     } while (0)
 
-static float silu_c(float x) { return x / (1.0f + expf(-x)); }
+static ivf32 silu_c(ivf32 x) { return x / (1.0f + expf(-x)); }
 
 int main(void) {
     /* 1) Loader self-check: load 'input' and compare to itself -> err exactly 0. */
     {
         int ndim;
         size_t shape[8];
-        const float* a = ref_load("input", &ndim, shape);
+        const ivf32* a = ref_load("input", &ndim, shape);
         CHECK(a != NULL);
-        float err;
+        ivf32 err;
         CHECK(ref_cmp("input", a, 1e-6f, &err) == 0);
         CHECK(err == 0.0f);
-        free((void*)a);
+        fiv_free((void*)a);
     }
 
     /* 2) End-to-end: silu transform of syn_silu_src must match syn_silu_out. */
     {
         size_t count = 0;
-        const float* src = ref_load_n("syn_silu_src", &count);
-        const float* out = ref_load_n("syn_silu_out", &count);
+        const ivf32* src = ref_load_n("syn_silu_src", &count);
+        const ivf32* out = ref_load_n("syn_silu_out", &count);
         CHECK(src != NULL && out != NULL);
-        float* mine = (float*)malloc(count * sizeof(float));
+        ivf32* mine = (ivf32*)fiv_malloc(count * sizeof(ivf32));
         for (size_t k = 0; k < count; k++) mine[k] = silu_c(src[k]);
-        float err;
+        ivf32 err;
         CHECK(ref_cmp("syn_silu_out", mine, 1e-6f, &err) == 0);
-        free(mine);
-        free((void*)src);
-        free((void*)out);
+        fiv_free(mine);
+        fiv_free((void*)src);
+        fiv_free((void*)out);
     }
 
     /* 3) Shape helper: recorded shape matches, a H/W swap must not.
@@ -58,12 +59,12 @@ int main(void) {
     {
         int ndim;
         size_t shape[8];
-        const float* a = ref_load("syn_pool_src", &ndim, shape);
+        const ivf32* a = ref_load("syn_pool_src", &ndim, shape);
         CHECK(a != NULL);
         CHECK(ref_shape_eq("syn_pool_src", ndim, shape) == 0);
         size_t swapped[4] = {shape[0], shape[1], shape[3], shape[2]};
         CHECK(ref_shape_eq("syn_pool_src", ndim, swapped) != 0);
-        free((void*)a);
+        fiv_free((void*)a);
     }
 
     if (g_fail == 0) {

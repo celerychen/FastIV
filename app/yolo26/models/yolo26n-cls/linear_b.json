@@ -1,0 +1,1 @@
+{"name": "linear_b", "shape": [1000], "dtype": "f32", "src": "head Linear bias [nc]"}

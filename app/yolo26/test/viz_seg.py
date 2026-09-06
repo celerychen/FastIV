@@ -16,7 +16,7 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw
 
-R = "app/yolo26/test/real/ref_seg/"
+R = "app/yolo26/models/yolo26n-seg/"
 IMG = "app/yolo26/test/real/bus.jpg"
 OUT = "app/yolo26/test/real/bus_seg_C.png"
 if len(sys.argv) >= 2:

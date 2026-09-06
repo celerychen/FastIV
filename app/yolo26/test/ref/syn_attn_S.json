@@ -1,1 +1,0 @@
-{"name": "syn_attn_S", "shape": [1, 2, 256, 256], "dtype": "f32", "src": "synthetic Attention intermediate 'S'"}

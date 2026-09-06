@@ -1,1 +1,0 @@
-{"name": "layer06_C3k2_in", "shape": [1, 128, 20, 20], "dtype": "f32", "src": "input fed to model.model[6] (C3k2)"}

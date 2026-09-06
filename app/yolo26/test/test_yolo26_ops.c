@@ -29,6 +29,7 @@
 #include "fiv_maxpool_node.h"
 #include "fiv_slice_node.h"
 #include "yolo26_ref.h"
+#include "fiv_common.h"
 
 static int g_pass = 0;
 static int g_fail = 0;
@@ -40,12 +41,12 @@ static int g_fail = 0;
     } while (0)
 
 /* Wrap a reference buffer into a contiguous 4D tensor. */
-static fiv_tensor4d* make_tensor4d(const float* src, const size_t shape[4], size_t* n_elems)
+static fiv_tensor4d* make_tensor4d(const ivf32* src, const size_t shape[4], size_t* n_elems)
 {
     fiv_tensor4d* t = fiv_create_tensor4d((size_t*)shape, FIV_32F1);
     if (!t) return NULL;
     size_t n = shape[0] * shape[1] * shape[2] * shape[3];
-    memcpy(((fiv_tensor_hdr*)t)->data.fl, src, n * sizeof(float));
+    memcpy(((fiv_tensor_hdr*)t)->data.fl, src, n * sizeof(ivf32));
     if (n_elems) *n_elems = n;
     return t;
 }
@@ -55,10 +56,10 @@ static void test_silu(void)
 {
     printf("[SiLU] y = x * sigmoid(x)\n");
     int ndim; size_t shape[4];
-    const float* src = ref_load("syn_silu_src", &ndim, shape);
+    const ivf32* src = ref_load("syn_silu_src", &ndim, shape);
     if (!src) { CHECK(0, "load syn_silu_src"); return; }
     size_t n; fiv_tensor4d* in = make_tensor4d(src, shape, &n);
-    free((void*)src);
+    fiv_free((void*)src);
     if (!in) { CHECK(0, "create input tensor"); return; }
 
     void* op = fiv_silu_node_create(NULL);
@@ -69,7 +70,7 @@ static void test_silu(void)
     r = fiv_silu_node_forward(op, out, (fiv_tensor_hdr*)in);
     CHECK(r == FIV_RET_OK, "forward");
 
-    float max_err;
+    ivf32 max_err;
     int rc = ref_cmp("syn_silu_out", out->data.fl, 1e-5f, &max_err);
     CHECK(rc == 0, "matches torch F.silu reference");
     if (rc != 0) printf("        max_abs_err=%.3e\n", max_err);
@@ -84,10 +85,10 @@ static void test_maxpool(void)
 {
     printf("[MaxPool] k=5 s=1 p=2 (one SPPF stage)\n");
     int ndim; size_t shape[4];
-    const float* src = ref_load("layer09_sppf_y0", &ndim, shape);
+    const ivf32* src = ref_load("layer09_sppf_y0", &ndim, shape);
     if (!src) { CHECK(0, "load layer09_sppf_y0"); return; }
     size_t n; fiv_tensor4d* in = make_tensor4d(src, shape, &n);
-    free((void*)src);
+    fiv_free((void*)src);
     if (!in) { CHECK(0, "create input tensor"); return; }
 
     fiv_maxpool_node_params p;
@@ -103,7 +104,7 @@ static void test_maxpool(void)
     r = fiv_maxpool_node_forward(op, out, (fiv_tensor_hdr*)in);
     CHECK(r == FIV_RET_OK, "forward");
 
-    float max_err;
+    ivf32 max_err;
     int rc = ref_cmp("layer09_sppf_y1", out->data.fl, 1e-5f, &max_err);
     CHECK(rc == 0, "matches torch MaxPool2d(k=5,s=1,p=2) reference");
     if (rc != 0) printf("        max_abs_err=%.3e\n", max_err);
@@ -118,10 +119,10 @@ static void test_slice(void)
 {
     printf("[Slice] channel split axis=1 (C2f / C3k style)\n");
     int ndim; size_t shape[4];
-    const float* src = ref_load("syn_slice_src", &ndim, shape);
+    const ivf32* src = ref_load("syn_slice_src", &ndim, shape);
     if (!src) { CHECK(0, "load syn_slice_src"); return; }
     size_t n; fiv_tensor4d* in = make_tensor4d(src, shape, &n);
-    free((void*)src);
+    fiv_free((void*)src);
     if (!in) { CHECK(0, "create input tensor"); return; }
 
     int c = (int)shape[1];
@@ -133,7 +134,7 @@ static void test_slice(void)
     fiv_ret r0; fiv_tensor_hdr* out0 = (fiv_tensor_hdr*)fiv_slice_node_alloc_out(op0, in, NULL, &r0);
     if (out0 && r0 == FIV_RET_OK) {
         r0 = fiv_slice_node_forward(op0, out0, (fiv_tensor_hdr*)in);
-        float e0; int rc0 = ref_cmp("syn_slice_half0", out0->data.fl, 1e-6f, &e0);
+        ivf32 e0; int rc0 = ref_cmp("syn_slice_half0", out0->data.fl, 1e-6f, &e0);
         CHECK(rc0 == 0, "slice [0,half) matches reference");
         if (rc0 != 0) printf("        max_abs_err=%.3e\n", e0);
         fiv_release_tensor((void**)&out0);
@@ -146,7 +147,7 @@ static void test_slice(void)
     fiv_ret r1; fiv_tensor_hdr* out1 = (fiv_tensor_hdr*)fiv_slice_node_alloc_out(op1, in, NULL, &r1);
     if (out1 && r1 == FIV_RET_OK) {
         r1 = fiv_slice_node_forward(op1, out1, (fiv_tensor_hdr*)in);
-        float e1; int rc1 = ref_cmp("syn_slice_half1", out1->data.fl, 1e-6f, &e1);
+        ivf32 e1; int rc1 = ref_cmp("syn_slice_half1", out1->data.fl, 1e-6f, &e1);
         CHECK(rc1 == 0, "slice [half,c) matches reference");
         if (rc1 != 0) printf("        max_abs_err=%.3e\n", e1);
         fiv_release_tensor((void**)&out1);

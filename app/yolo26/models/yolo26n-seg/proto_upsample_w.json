@@ -1,0 +1,1 @@
+{"name": "proto_upsample_w", "shape": [64, 64, 2, 2], "dtype": "f32", "src": "ConvTranspose2d weight [c_in,c_out,2,2]"}
