@@ -43,6 +43,7 @@ void* fiv_concat_node_create(void* params)
     n->base.forward_multi_fn   = fiv_concat_node_forward_multi;
     n->base.backward_multi_fn  = fiv_concat_node_backward_multi;
     n->base.inference_multi_fn = fiv_concat_node_inference_multi;
+    n->base.alloc_out_fn       = fiv_concat_node_alloc_out;
     n->axis            = p->axis;
     n->output_channels = p->output_channels;
     return n;

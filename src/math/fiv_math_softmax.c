@@ -37,10 +37,13 @@ static void fiv_math_softmax_row_real64(ivf64* dst, const ivf64* src, size_t col
         dst[j] *= inv_sum;
 }
 
-void fiv_math_softmax_real64(ivf64* dst, const ivf64* src, size_t rows, size_t cols)
+void fiv_math_softmax_real64(ivf64* dst, int dst_stride,
+                             const ivf64* src, int src_stride,
+                             size_t rows, size_t cols)
 {
     for (size_t i = 0; i < rows; i++)
-        fiv_math_softmax_row_real64(dst + i * cols, src + i * cols, cols);
+        fiv_math_softmax_row_real64(dst + (size_t)dst_stride * i,
+                                    src + (size_t)src_stride * i, cols);
 }
 
 /* Scalar FIV_32F1 fallback, only compiled when the AVX2 kernel is not
@@ -64,10 +67,13 @@ static void fiv_math_softmax_row_real32(ivf32* dst, const ivf32* src, size_t col
         dst[j] *= inv_sum;
 }
 
-void fiv_math_softmax_real32(ivf32* dst, const ivf32* src, size_t rows, size_t cols)
+void fiv_math_softmax_real32(ivf32* dst, int dst_stride,
+                             const ivf32* src, int src_stride,
+                             size_t rows, size_t cols)
 {
     for (size_t i = 0; i < rows; i++)
-        fiv_math_softmax_row_real32(dst + i * cols, src + i * cols, cols);
+        fiv_math_softmax_row_real32(dst + (size_t)dst_stride * i,
+                                    src + (size_t)src_stride * i, cols);
 }
 #endif  /* !FIV_USE_AVX2 */
 
@@ -172,15 +178,21 @@ static void fiv_math_softmax_row_avx2_ps(ivf32* x, size_t n)
         x[k] *= inv;
 }
 
-/* Full-matrix AVX2 backend: the row kernel normalizes one row in place, so for
-   an out-of-place call the src buffer is copied into dst first, then each row
-   is normalized. */
-void fiv_math_softmax_avx2_ps(ivf32* dst, const ivf32* src, size_t rows, size_t cols)
+/* Full-matrix AVX2 backend: the row kernel normalizes one row in place. For an
+   out-of-place call each row is copied (per-row, so strided layouts are handled
+   correctly) before being normalized in place; an in-place call skips the copy. */
+void fiv_math_softmax_avx2_ps(ivf32* dst, int dst_stride,
+                             const ivf32* src, int src_stride,
+                             size_t rows, size_t cols)
 {
-    if (dst != src)
-        memcpy(dst, src, (size_t)rows * cols * sizeof(ivf32));
-    for (size_t i = 0; i < rows; i++)
-        fiv_math_softmax_row_avx2_ps((ivf32*)dst + i * cols, cols);
+    const int out_of_place = (dst != src);
+    for (size_t i = 0; i < rows; i++) {
+        ivf32*       drow = dst + (size_t)dst_stride * i;
+        const ivf32* srow = src + (size_t)src_stride * i;
+        if (out_of_place)
+            memcpy(drow, srow, cols * sizeof(ivf32));
+        fiv_math_softmax_row_avx2_ps(drow, cols);
+    }
 }
 
 #endif  /* FIV_USE_AVX2 */

@@ -28,6 +28,10 @@
 #include "fiv_prelu_node.h"
 #include "fiv_concat_node.h"
 #include "fiv_spatial_pad_node.h"
+#include "fiv_silu_node.h"
+#include "fiv_maxpool_node.h"
+#include "fiv_slice_node.h"
+#include "fiv_attention_node.h"
 #include "fiv_matrix.h"
 #include "fiv_common.h"
 
@@ -98,6 +102,10 @@ static void* fiv_nn_make_op(int node_type, void* params)
     case FIV_NN_NODE_PRELU:      return fiv_prelu_node_create(params);
     case FIV_NN_NODE_CONCAT:     return fiv_concat_node_create(params);
     case FIV_NN_NODE_SPATIAL_PAD:return fiv_spatial_pad_node_create(params);
+    case FIV_NN_NODE_SILU:    return fiv_silu_node_create(params);
+    case FIV_NN_NODE_MAXPOOL: return fiv_maxpool_node_create(params);
+    case FIV_NN_NODE_SLICE:   return fiv_slice_node_create(params);
+    case FIV_NN_NODE_ATTENTION: return fiv_attention_node_create(params);
     default:                     return NULL;
     }
 }

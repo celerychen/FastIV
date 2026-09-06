@@ -23,21 +23,32 @@ extern "C" {
    (api/fiv_math.h). Row-wise normalization of a whole matrix: every row is
    processed independently, dst[i,j] = exp(src[i,j] - max_j) / sum_j exp(...)
    with the per-row max subtraction for stability. dst may alias src
-   (in-place). NOT standalone public interfaces. */
+   (in-place). NOT standalone public interfaces.
+
+   dst_stride / src_stride are the row strides in elements (distance between
+   consecutive rows in the flat buffer), matching the lda/ldb/ldc convention of
+   the low-level matrix-multiply interface. A contiguous row-major matrix has
+   stride == cols. */
 
 /* FIV_64F1 scalar backend. */
-void fiv_math_softmax_real64(ivf64* dst, const ivf64* src, size_t rows, size_t cols);
+void fiv_math_softmax_real64(ivf64* dst, int dst_stride,
+                             const ivf64* src, int src_stride,
+                             size_t rows, size_t cols);
 
 /* FIV_32F1 scalar fallback, only compiled when the AVX2 kernel is absent. */
 #if !defined(FIV_USE_AVX2)
-void fiv_math_softmax_real32(ivf32* dst, const ivf32* src, size_t rows, size_t cols);
+void fiv_math_softmax_real32(ivf32* dst, int dst_stride,
+                             const ivf32* src, int src_stride,
+                             size_t rows, size_t cols);
 #endif
 
 /* FIV_32F1 AVX2+FMA backend, only compiled when FIV_USE_AVX2 is defined.
-   Handles the out-of-place copy internally, then normalizes each row in place
-   in dst. */
+   Handles the out-of-place, per-row copy internally, then normalizes each row
+   in place in dst. */
 #if defined(FIV_USE_AVX2)
-void fiv_math_softmax_avx2_ps(ivf32* dst, const ivf32* src, size_t rows, size_t cols);
+void fiv_math_softmax_avx2_ps(ivf32* dst, int dst_stride,
+                             const ivf32* src, int src_stride,
+                             size_t rows, size_t cols);
 #endif
 
 #ifdef __cplusplus
