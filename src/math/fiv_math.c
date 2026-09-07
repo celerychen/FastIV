@@ -47,6 +47,8 @@ fiv_ret fiv_math_sigmoid(fiv_vec* dst, const fiv_vec* src)
 
 #if defined(FIV_USE_AVX2)
     fiv_math_sigmoid_avx2_ps((ivf32*)dst->data.fl, (const ivf32*)src->data.fl, element_count);
+#elif defined(FIV_USE_ARM_NEON)
+    fiv_math_sigmoid_neon_ps((ivf32*)dst->data.fl, (const ivf32*)src->data.fl, element_count);
 #else
     fiv_math_sigmoid_real32((ivf32*)dst->data.fl, (const ivf32*)src->data.fl, element_count);
 #endif
@@ -80,6 +82,9 @@ fiv_ret fiv_math_softmax(fiv_mat* dst, const fiv_mat* src)
 
 #if defined(FIV_USE_AVX2)
     fiv_math_softmax_avx2_ps((ivf32*)dst->data.fl, dst_stride,
+                             (const ivf32*)src->data.fl, src_stride, rows, cols);
+#elif defined(FIV_USE_ARM_NEON)
+    fiv_math_softmax_neon_ps((ivf32*)dst->data.fl, dst_stride,
                              (const ivf32*)src->data.fl, src_stride, rows, cols);
 #else
     fiv_math_softmax_real32((ivf32*)dst->data.fl, dst_stride,

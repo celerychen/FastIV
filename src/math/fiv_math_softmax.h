@@ -51,6 +51,15 @@ void fiv_math_softmax_avx2_ps(ivf32* dst, int dst_stride,
                              size_t rows, size_t cols);
 #endif
 
+/* FIV_32F1 NEON backend, only compiled when FIV_USE_ARM_NEON is defined.
+   Same 3-pass stable row algorithm; the row pass runs 8 floats/iter (dual
+   exp128_ps2). */
+#if defined(FIV_USE_ARM_NEON)
+void fiv_math_softmax_neon_ps(ivf32* dst, int dst_stride,
+                             const ivf32* src, int src_stride,
+                             size_t rows, size_t cols);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

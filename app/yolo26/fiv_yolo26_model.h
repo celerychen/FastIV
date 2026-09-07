@@ -105,6 +105,11 @@ fiv_ret fiv_release_yolo26_segmenter(void** model);
 fiv_ret fiv_release_yolo26_pose(void** model);
 fiv_ret fiv_release_yolo26_classifier(void** model);
 
+/* Per-call stage timing (ms) accumulated inside on_image: avg_ms[0] = letterbox,
+ * avg_ms[1] = engine inference, avg_ms[2] = decode + post-processing, averaged
+ * over the runs since create (calls reported via `calls`). Returns FIV_RET_OK. */
+fiv_ret fiv_yolo26_get_timing(void* model, ivf64 avg_ms[3], int* calls);
+
 #ifdef __cplusplus
 }
 #endif

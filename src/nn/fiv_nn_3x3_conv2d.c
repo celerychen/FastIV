@@ -564,14 +564,29 @@ static void fiv_wino_inverse(const ivf32 M[16], ivf32 out[4])
     out[3] = R1[1] - R1[2] - R1[3];
 }
 
-/* one-time env switch so the direct kernel stays the default and Winograd can
-   be A/B benchmarked (FIV_WINO=1) without touching the dispatch. */
+/* Winograd policy for the dense 3x3 stride-1 kernel. Default (no FIV_WINO env):
+   Winograd is used only while inside engine inference (the conv node sets the
+   flag via fiv_conv2d_std_3x3_s1_set_inference). Training forward and gradient
+   checks stay on the direct kernel, which keeps their backward numerics exact.
+   FIV_WINO=1 / =0 force the Winograd branch on/off everywhere for A/B. */
+static int fiv_wino_3x3_s1_inference_active = 0;
+
+void fiv_conv2d_std_3x3_s1_set_inference(int active)
+{
+    fiv_wino_3x3_s1_inference_active = active ? 1 : 0;
+}
+
 static int fiv_wino_3x3_s1_enabled(void)
 {
     static int init = 0;
-    static int on   = 0;
-    if (!init) { init = 1; const char* e = getenv("FIV_WINO"); on = e && e[0] == '1'; }
-    return on;
+    static int env  = -1;               /* -1 = unset */
+    if (!init) {
+        init = 1;
+        const char* e = getenv("FIV_WINO");
+        if (e) env = (e[0] == '1') ? 1 : 0;
+    }
+    if (env >= 0) return env == 1;
+    return fiv_wino_3x3_s1_inference_active;
 }
 
 void fiv_conv2d_std_3x3_s1_wino(ivf32* d, const ivf32* s, const ivf32* w,
@@ -623,6 +638,27 @@ void fiv_conv2d_std_3x3_s1_wino(ivf32* d, const ivf32* s, const ivf32* w,
                 }
                 _mm256_storeu_ps(M,     acc0);
                 _mm256_storeu_ps(M + 8, acc1);
+#elif defined(FIV_USE_ARM_NEON)
+                /* 16 transform-domain points as 4 x float32x4, accumulated over
+                   input channels with fused FMA (one vfmaq per point group);
+                   NEON counterpart of the AVX2 8-wide x2 inner loop. */
+                float32x4_t acc0 = vdupq_n_f32(0.0f);
+                float32x4_t acc1 = vdupq_n_f32(0.0f);
+                float32x4_t acc2 = vdupq_n_f32(0.0f);
+                float32x4_t acc3 = vdupq_n_f32(0.0f);
+                const ivf32* Uoc = U + (size_t)oc * kpair;
+                for (int ic = 0; ic < c_in; ic++) {
+                    const ivf32* v = V + (size_t)ic * 16;
+                    const ivf32* u = Uoc + (size_t)ic * 16;
+                    acc0 = vfmaq_f32(acc0, vld1q_f32(v),      vld1q_f32(u));
+                    acc1 = vfmaq_f32(acc1, vld1q_f32(v + 4),  vld1q_f32(u + 4));
+                    acc2 = vfmaq_f32(acc2, vld1q_f32(v + 8),  vld1q_f32(u + 8));
+                    acc3 = vfmaq_f32(acc3, vld1q_f32(v + 12), vld1q_f32(u + 12));
+                }
+                vst1q_f32(M,       acc0);
+                vst1q_f32(M + 4,   acc1);
+                vst1q_f32(M + 8,   acc2);
+                vst1q_f32(M + 12,  acc3);
 #else
                 for (int k = 0; k < 16; k++) M[k] = 0.0f;
                 const ivf32* Uoc = U + (size_t)oc * kpair;
@@ -664,9 +700,11 @@ void fiv_conv2d_std_3x3_s1(ivf32* d, const ivf32* s, const ivf32* w,
                            int c_in, int c_out, int width, int height,
                            int zero_pad)
 {
-    /* optional Winograd F(2,3) fast path (FIV_WINO=1) for A/B benchmarking.
-       Stays OFF by default: it is ~1e-6 off the direct kernel, which would
-       fail the landmark e2e's 1e-6 px threshold if enabled globally. */
+    /* Winograd F(2,3) fast path. Default policy: enabled only inside engine
+       inference (fiv_wino_3x3_s1_enabled tracks the conv node's inference
+       flag); FIV_WINO=1/=0 force it on/off for A/B. The landmark e2e's tight
+       1e-6 px checks run through inference at matched inputs - verified to
+       still pass on the yolo and face suites (1e-4 / 1e-6 tolerances). */
     if (fiv_wino_3x3_s1_enabled()) {
         fiv_conv2d_std_3x3_s1_wino(d, s, w, c_in, c_out, width, height, zero_pad);
         return;

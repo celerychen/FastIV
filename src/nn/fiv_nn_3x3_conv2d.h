@@ -36,6 +36,14 @@ void fiv_conv2d_std_3x3_s1(ivf32* d, const ivf32* s, const ivf32* w,
 void fiv_conv2d_std_3x3_s1_wino(ivf32* d, const ivf32* s, const ivf32* w,
                                 int c_in, int c_out, int width, int height,
                                 int zero_pad);
+
+/* Runtime Winograd policy for the dense 3x3 stride-1 path. Called by the conv
+   node wrappers: forward (training / gradient checks) stays on the direct
+   kernel, inference switches to Winograd F(2,3) by default. `active` = 1 marks
+   the caller is inside engine inference, 0 marks training/forward. The kernel
+   only takes the Winograd branch when active AND the FIV_WINO env override is
+   absent (FIV_WINO=1 forces it on everywhere for A/B, =0 forces it off). */
+void fiv_conv2d_std_3x3_s1_set_inference(int active);
 void fiv_conv2d_std_3x3_s2(ivf32* d, const ivf32* s, const ivf32* w,
                            int c_in, int c_out, int width, int height,
                            int oh, int ow, int zero_pad);

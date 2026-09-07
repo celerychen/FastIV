@@ -69,6 +69,11 @@ typedef struct {
     ivf32*             proto_out;       /* [32 * Hp * Wp] */
     ivf32*             mask_scratch;    /* [MAX_DET * Hp * Wp] */
     size_t             proto_plane;     /* Hp * Wp floats per instance/channel */
+    /* cumulative stage timing over timing_calls on_image runs (ms) */
+    ivf64              timing_pre_ms;   /* letterbox */
+    ivf64              timing_infer_ms; /* engine forward */
+    ivf64              timing_post_ms;  /* decode + post-processing */
+    int                timing_calls;
 } fiv_yolo26_model;
 
 /* ------------------------------------------------------------------ */
@@ -473,10 +478,15 @@ static fiv_ret fiv_y26_model_run_det(fiv_yolo26_model* model, void* result,
     fiv_yolo26_det_result* out = (fiv_yolo26_det_result*)result;
     out->count = 0;
 
+    ivf64 _t_pre = fiv_get_current_system_time();
     fiv_tensor4d* input = fiv_y26_model_letterbox(model, image);
     if (input == NULL) return FIV_RET_ERR_MEM;
+    model->timing_pre_ms += fiv_get_current_system_time() - _t_pre;
+    ivf64 _t_inf = fiv_get_current_system_time();
     fiv_ret run_result = fiv_y26_model_forward(model, input);
     fiv_release_tensor((void**)&input);
+    model->timing_infer_ms += fiv_get_current_system_time() - _t_inf;
+    ivf64 _t_post = fiv_get_current_system_time();
     if (run_result != FIV_RET_OK) return run_result;
 
     const fiv_tensor4d* heads[6];
@@ -506,6 +516,8 @@ static fiv_ret fiv_y26_model_run_det(fiv_yolo26_model* model, void* result,
         box->score = row[4];
         box->class_id = (int)row[5];
     }
+    model->timing_post_ms += fiv_get_current_system_time() - _t_post;
+    model->timing_calls += 1;
     return FIV_RET_OK;
 }
 
@@ -515,10 +527,15 @@ static fiv_ret fiv_y26_model_run_pose(fiv_yolo26_model* model, void* result,
     fiv_yolo26_pose_result* out = (fiv_yolo26_pose_result*)result;
     out->count = 0;
 
+    ivf64 _t_pre = fiv_get_current_system_time();
     fiv_tensor4d* input = fiv_y26_model_letterbox(model, image);
     if (input == NULL) return FIV_RET_ERR_MEM;
+    model->timing_pre_ms += fiv_get_current_system_time() - _t_pre;
+    ivf64 _t_inf = fiv_get_current_system_time();
     fiv_ret run_result = fiv_y26_model_forward(model, input);
     fiv_release_tensor((void**)&input);
+    model->timing_infer_ms += fiv_get_current_system_time() - _t_inf;
+    ivf64 _t_post = fiv_get_current_system_time();
     if (run_result != FIV_RET_OK) return run_result;
 
     const fiv_tensor4d* heads[9];
@@ -563,6 +580,8 @@ static fiv_ret fiv_y26_model_run_pose(fiv_yolo26_model* model, void* result,
         }
     }
     fiv_free(decode_rows);
+    model->timing_post_ms += fiv_get_current_system_time() - _t_post;
+    model->timing_calls += 1;
     return FIV_RET_OK;
 }
 
@@ -588,12 +607,19 @@ fiv_ret fiv_yolo26_classifier_on_image(void* result, fiv_mat* image, void* model
     fiv_yolo26_model* ctx = (fiv_yolo26_model*)model;
     if (ctx->task != FIV_YOLO26_TASK_CLASSIFIER) return FIV_RET_ERR_PARA;
 
+    ivf64 _t_pre = fiv_get_current_system_time();
     fiv_tensor4d* input = fiv_y26_model_letterbox(ctx, image);
     if (input == NULL) return FIV_RET_ERR_MEM;
+    ctx->timing_pre_ms += fiv_get_current_system_time() - _t_pre;
+    ivf64 _t_inf = fiv_get_current_system_time();
     fiv_ret run_result = fiv_y26_model_forward(ctx, input);
     fiv_release_tensor((void**)&input);
+    ctx->timing_infer_ms += fiv_get_current_system_time() - _t_inf;
+    ivf64 _t_post = fiv_get_current_system_time();
     if (run_result != FIV_RET_OK) return run_result;
     if (fiv_y26_model_classify(ctx, result) != 0) return FIV_RET_ERR_MEM;
+    ctx->timing_post_ms += fiv_get_current_system_time() - _t_post;
+    ctx->timing_calls += 1;
     return FIV_RET_OK;
 }
 
@@ -609,10 +635,15 @@ static fiv_ret fiv_y26_model_run_seg(fiv_yolo26_model* model, void* result,
     out->proto_grid_w = 0.0f;
     out->proto_grid_h = 0.0f;
 
+    ivf64 _t_pre = fiv_get_current_system_time();
     fiv_tensor4d* input = fiv_y26_model_letterbox(model, image);
     if (input == NULL) return FIV_RET_ERR_MEM;
+    model->timing_pre_ms += fiv_get_current_system_time() - _t_pre;
+    ivf64 _t_inf = fiv_get_current_system_time();
     fiv_ret run_result = fiv_y26_model_forward(model, input);
     fiv_release_tensor((void**)&input);
+    model->timing_infer_ms += fiv_get_current_system_time() - _t_inf;
+    ivf64 _t_post = fiv_get_current_system_time();
     if (run_result != FIV_RET_OK) return run_result;
 
     const fiv_tensor4d* heads[9];
@@ -658,7 +689,11 @@ static fiv_ret fiv_y26_model_run_seg(fiv_yolo26_model* model, void* result,
 
     /* ---- Proto26: P3/P4/P5 are the layer-16/19/22 features the heads sat on.
        Reuse those engine-resident tensors; spatial dims equal head level 0. -- */
-    if (model->proto_w[0] == NULL) return FIV_RET_OK;   /* proto weights absent */
+    if (model->proto_w[0] == NULL) {
+        model->timing_post_ms += fiv_get_current_system_time() - _t_post;
+        model->timing_calls += 1;
+        return FIV_RET_OK;   /* proto weights absent */
+    }
     {
         const fiv_tensor4d* p3 = (const fiv_tensor4d*)fiv_neural_network_get_node_output(
             model->net, model->graph->layer_node[16]);
@@ -710,9 +745,13 @@ static fiv_ret fiv_y26_model_run_seg(fiv_yolo26_model* model, void* result,
         out->proto_grid_w = (ivf32)out_width;
         out->proto_grid_h = (ivf32)out_height;
 
-        /* per-instance mask = sigmoid( sum_m coef[m] * proto[m] ) on the grid */
+        /* per-instance mask = sigmoid( sum_m coef[m] * proto[m] ) on the grid.
+           Masks are only rebuilt for rows that actually look like detections
+           (score >= 0.05); the top-k rows below that are background clutter and
+           building 80x80 masks for all 300 of them would dominate the call. */
         ivf32* mask_rows_data = model->mask_scratch;
         for (int i = 0; i < kept && i < FIV_YOLO26_MAX_DETECTIONS; i++) {
+            if (out->detections[i].score < 0.05f) continue;
             ivf32* mask = mask_rows_data + (size_t)i * proto_plane;
             for (size_t p = 0; p < proto_plane; p++) {
                 ivf32 acc = 0.0f;
@@ -725,6 +764,8 @@ static fiv_ret fiv_y26_model_run_seg(fiv_yolo26_model* model, void* result,
         }
         out->masks = mask_rows_data;
     }
+    model->timing_post_ms += fiv_get_current_system_time() - _t_post;
+    model->timing_calls += 1;
     return FIV_RET_OK;
 }
 
@@ -793,4 +834,18 @@ fiv_ret fiv_release_yolo26_classifier(void** model)
     fiv_ret ret = fiv_y26_model_release(ctx);
     *model = NULL;
     return ret;
+}
+
+fiv_ret fiv_yolo26_get_timing(void* model, ivf64 avg_ms[3], int* calls)
+{
+    fiv_yolo26_model* ctx = (fiv_yolo26_model*)model;
+    if (!ctx) return FIV_RET_ERR_PARA;
+    int n = ctx->timing_calls;
+    if (avg_ms) {
+        avg_ms[0] = n > 0 ? ctx->timing_pre_ms / (ivf64)n   : 0.0;
+        avg_ms[1] = n > 0 ? ctx->timing_infer_ms / (ivf64)n : 0.0;
+        avg_ms[2] = n > 0 ? ctx->timing_post_ms / (ivf64)n  : 0.0;
+    }
+    if (calls) *calls = n;
+    return FIV_RET_OK;
 }
