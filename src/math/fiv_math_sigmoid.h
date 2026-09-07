@@ -37,6 +37,12 @@ void fiv_math_sigmoid_real32(ivf32* dst, const ivf32* src, size_t element_count)
 void fiv_math_sigmoid_avx2_ps(ivf32* dst, const ivf32* src, size_t element_count);
 #endif
 
+/* FIV_32F1 NEON backend, only compiled when FIV_USE_ARM_NEON is defined.
+   Same |x| stable form; main loop advances by 8 floats (dual exp128_ps2). */
+#if defined(FIV_USE_ARM_NEON)
+void fiv_math_sigmoid_neon_ps(ivf32* dst, const ivf32* src, size_t element_count);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

@@ -14,6 +14,9 @@
 
 #include <math.h>
 #include <string.h>
+#if defined(FIV_USE_ARM_NEON)
+#include "fiv_math_kernels.h"
+#endif
 
 /* Sigmoid with input clamping to stay in the numerically safe range of expf
    (same bound as the standalone sigmoid node, ~ +-88). */
@@ -41,8 +44,48 @@ static fiv_ret fiv_silu_compute(fiv_tensor_hdr* out, const fiv_tensor_hdr* in)
     size_t samples = in->total_bytes / sizeof(ivf32);
     const ivf32* src = in->data.fl;
     ivf32* dst = out->data.fl;
+#if defined(FIV_USE_ARM_NEON)
+    /* NEON body mirrors the scalar path: sigmoid = 1/(1+exp(-v)) via the
+       shared exp128/rcp128 kernels (rcp128 = vrecpeq + two Newton steps ~ 1e-7
+       rel, float rounding level). The clamp in [-88, 88] guards the exp input
+       only; the final multiply always uses the ORIGINAL sample so x*sigmoid(x)
+       does not saturate when |x| > 88. The main loop advances by EIGHT floats:
+       one fiv_math_exp128_ps2 call evaluates the exp of both 4-lane vectors at
+       once (dual Horner chain, coefficients by lane-immediate DUP). */
+    size_t index = 0;
+    const float32x4_t clamp_hi = vdupq_n_f32(88.0f);
+    const float32x4_t clamp_lo = vdupq_n_f32(-88.0f);
+    const float32x4_t one      = vdupq_n_f32(1.0f);
+    for (; index + 8 <= samples; index += 8) {
+        float32x4_t va = vld1q_f32(src + index);
+        float32x4_t vb = vld1q_f32(src + index + 4);
+        /* The clamp protects the exp argument only (expf saturates beyond
+           +-88); sigmoid(88) is already 1.0f in fp32, so for |v| > 88 the
+           result x*sigmoid(x) must keep the ORIGINAL x, not the clamped one -
+           multiplying a clamped 88 would wrongly saturate the output at 88
+           (found via seg layer00 pre-activations reaching ~102). */
+        float32x4_t ca = vminq_f32(vmaxq_f32(va, clamp_lo), clamp_hi);
+        float32x4_t cb = vminq_f32(vmaxq_f32(vb, clamp_lo), clamp_hi);
+        fiv_f32x4x2 e = fiv_math_exp128_ps2(vnegq_f32(ca), vnegq_f32(cb));
+        float32x4_t sig_a = fiv_math_rcp128_ps(vaddq_f32(one, e.a));
+        float32x4_t sig_b = fiv_math_rcp128_ps(vaddq_f32(one, e.b));
+        vst1q_f32(dst + index,     vmulq_f32(va, sig_a));
+        vst1q_f32(dst + index + 4, vmulq_f32(vb, sig_b));
+    }
+    /* tail: the remaining 4..7 floats still benefit from a 4-lane pass */
+    for (; index + 4 <= samples; index += 4) {
+        float32x4_t v = vld1q_f32(src + index);
+        float32x4_t c = vminq_f32(vmaxq_f32(v, clamp_lo), clamp_hi);
+        float32x4_t sig = fiv_math_rcp128_ps(
+            vaddq_f32(one, fiv_math_exp128_ps(vnegq_f32(c))));
+        vst1q_f32(dst + index, vmulq_f32(v, sig));
+    }
+    for (; index < samples; index++)
+        dst[index] = fiv_silu_apply(src[index]);
+#else
     for (size_t index = 0; index < samples; index++)
         dst[index] = fiv_silu_apply(src[index]);
+#endif
     return FIV_RET_OK;
 }
 

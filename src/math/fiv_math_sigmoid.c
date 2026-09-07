@@ -103,3 +103,73 @@ void fiv_math_sigmoid_avx2_ps(ivf32* dst, const ivf32* src, size_t element_count
 }
 
 #endif  /* FIV_USE_AVX2 */
+
+
+/* ==================== Sigmoid (NEON, element-wise) ====================
+   Same numerically stable |x| form as the scalar/AVX2 path so only ONE exp is
+   needed per element and its argument is always <= 0:
+     e = exp(-|x|)  (e in (0,1]; never overflows)
+     t = 1 / (1 + e)  (t in [0.5, 1); rcp128 ~ full float precision)
+     sigmoid(x) = x >= 0 ? t : 1 - t
+   The main loop advances by EIGHT floats: one fiv_math_exp128_ps2 dual call
+   evaluates exp(-|x|) of both 4-lane vectors at once (the interleaved Horner
+   chains share the packed coefficients), then the reciprocal/sign-select are
+   done per 4-lane vector. */
+#if defined(FIV_USE_ARM_NEON)
+
+#include "fiv_math_kernels.h"
+
+/* one 4-lane vector: sigmoid(x) (single-chain exp for tails) */
+static inline float32x4_t fiv_math_sigmoid128_ps(float32x4_t x)
+{
+    const float32x4_t c_one     = vdupq_n_f32(1.0f);
+    const float32x4_t c_zero    = vdupq_n_f32(0.0f);
+
+    float32x4_t ax = vabsq_f32(x);                            /* |x|          */
+    float32x4_t t  = fiv_math_rcp128_ps(
+                         vaddq_f32(c_one,
+                                   fiv_math_exp128_ps(vnegq_f32(ax)))); /* 1/(1+e) */
+    /* x < 0 ? 1-t : t (vbsl: bit of neg set -> take one_minus_t) */
+    uint32x4_t neg = vcltq_f32(x, c_zero);
+    return vbslq_f32(neg, vsubq_f32(c_one, t), t);
+}
+
+/* two 4-lane vectors: sigmoid for 8 floats, sharing the packed-coefficient
+   dual-vector exp128_ps2 */
+static inline void fiv_math_sigmoid128_ps2(float32x4_t x, float32x4_t y,
+                                           float32x4_t* sx, float32x4_t* sy)
+{
+    const float32x4_t c_one     = vdupq_n_f32(1.0f);
+    const float32x4_t c_zero    = vdupq_n_f32(0.0f);
+
+    float32x4_t ax = vabsq_f32(x);
+    float32x4_t ay = vabsq_f32(y);
+    fiv_f32x4x2 e  = fiv_math_exp128_ps2(vnegq_f32(ax), vnegq_f32(ay));
+
+    float32x4_t tx = fiv_math_rcp128_ps(vaddq_f32(c_one, e.a));
+    float32x4_t ty = fiv_math_rcp128_ps(vaddq_f32(c_one, e.b));
+    *sx = vbslq_f32(vcltq_f32(x, c_zero), vsubq_f32(c_one, tx), tx);
+    *sy = vbslq_f32(vcltq_f32(y, c_zero), vsubq_f32(c_one, ty), ty);
+}
+
+/* Element-wise sigmoid over the whole buffer, in-place safe (dst may alias
+   src). Main loop 8 floats/iter via the dual-vector exp128_ps2; the tail uses
+   the single-vector exp128_ps, then a scalar tail (identical to the silu node
+   NEON layout). */
+void fiv_math_sigmoid_neon_ps(ivf32* dst, const ivf32* src, size_t element_count)
+{
+    size_t i = 0;
+    for (; i + 8 <= element_count; i += 8) {
+        float32x4_t sx, sy;
+        fiv_math_sigmoid128_ps2(vld1q_f32(src + i), vld1q_f32(src + i + 4),
+                                &sx, &sy);
+        vst1q_f32(dst + i,     sx);
+        vst1q_f32(dst + i + 4, sy);
+    }
+    for (; i + 4 <= element_count; i += 4)
+        vst1q_f32(dst + i, fiv_math_sigmoid128_ps(vld1q_f32(src + i)));
+    for (; i < element_count; i++)
+        dst[i] = 1.0f / (1.0f + expf(-src[i]));
+}
+
+#endif  /* FIV_USE_ARM_NEON */

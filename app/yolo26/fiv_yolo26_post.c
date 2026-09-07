@@ -23,6 +23,8 @@
  * Output rows are [x1, y1, x2, y2, score, class], score-descending. */
 
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include <string.h>
 
 #include "fiv_common.h"
@@ -76,10 +78,130 @@ static ivf32 y26_sigmoid(ivf32 value)
     return exp_val / (1.0f + exp_val);
 }
 
+/* ---- size-k min-heap on (value, id) pairs --------------------------------
+   The heap root is the smallest value. A candidate displaces the root only
+   when STRICTLY greater, so equal-valued candidates never displace - the kept
+   set therefore retains the earliest-scanned ids on ties, which matches the
+   previous repeated-argmax implementation's tie semantics exactly. Equal
+   values inside the heap are interchangeable (displacement never depends on
+   which equal one is at the root), so the comparator only looks at value. */
+
+typedef struct {
+    ivf32  value;
+    int    id;
+} y26_heap_item;
+
+static void y26_heap_sift_up(y26_heap_item* heap, int pos)
+{
+    y26_heap_item item = heap[pos];
+    while (pos > 0) {
+        int parent = (pos - 1) >> 1;
+        if (heap[parent].value <= item.value) break;
+        heap[pos] = heap[parent];
+        pos       = parent;
+    }
+    heap[pos] = item;
+}
+
+static void y26_heap_sift_down(y26_heap_item* heap, int size)
+{
+    y26_heap_item item = heap[0];
+    int pos = 0;
+    for (;;) {
+        int left  = 2 * pos + 1;
+        if (left >= size) break;
+        int right = left + 1;
+        int child = left;
+        if (right < size && heap[right].value < heap[left].value) child = right;
+        if (heap[child].value >= item.value) break;
+        heap[pos] = heap[child];
+        pos       = child;
+    }
+    heap[pos] = item;
+}
+
+/* Keep the largest `keep_count` of `item_count` items (by value; strictly
+ * greater replaces the root). On return heap[0..min(keep,item)) holds them. */
+static void y26_heap_select(const ivf32* values, int item_count, int keep_count,
+                            y26_heap_item* heap)
+{
+    int size = 0;
+    for (int i = 0; i < item_count; i++) {
+        if (size < keep_count) {
+            heap[size].value = values[i];
+            heap[size].id    = i;
+            y26_heap_sift_up(heap, size);
+            size++;
+        } else if (values[i] > heap[0].value) {
+            heap[0].value = values[i];
+            heap[0].id    = i;
+            y26_heap_sift_down(heap, size);
+        }
+    }
+}
+
+/* Total order for the final stage-2 ranking: value DESCENDING, equal values by
+ * id ASCENDING. Any correct sort under this order produces one unique sequence,
+ * so a hand-rolled quick sort keeps the output bit-identical to the previous
+ * libc qsort while avoiding the indirect per-comparison function pointer and
+ * the libc call. Recursion is bounded to O(log n) by always recursing into the
+ * smaller partition half. */
+static int y26_heap_before(const y26_heap_item* a, const y26_heap_item* b)
+{
+    if (a->value != b->value) return a->value > b->value;
+    return a->id < b->id;
+}
+
+static void y26_heap_swap(y26_heap_item* a, y26_heap_item* b)
+{
+    y26_heap_item tmp = *a;
+    *a = *b;
+    *b = tmp;
+}
+
+static void y26_heap_qsort_range(y26_heap_item* items, int low, int high)
+{
+    while (low < high) {
+        /* median-of-three pivot guards against (near-)sorted input */
+        int mid = low + ((high - low) >> 1);
+        if (y26_heap_before(&items[high], &items[low]))
+            y26_heap_swap(&items[low], &items[high]);
+        if (y26_heap_before(&items[mid], &items[low]))
+            y26_heap_swap(&items[low], &items[mid]);
+        if (y26_heap_before(&items[high], &items[mid]))
+            y26_heap_swap(&items[mid], &items[high]);
+
+        y26_heap_item pivot = items[mid];
+        int left  = low;
+        int right = high;
+        while (left <= right) {
+            while (y26_heap_before(&items[left], &pivot)) left++;
+            while (y26_heap_before(&pivot, &items[right])) right--;
+            if (left <= right) {
+                y26_heap_swap(&items[left], &items[right]);
+                left++;
+                right--;
+            }
+        }
+        if (right - low < high - left) {
+            y26_heap_qsort_range(items, low, right);
+            low = left;
+        } else {
+            y26_heap_qsort_range(items, left, high);
+            high = right;
+        }
+    }
+}
+
+static void y26_heap_qsort_desc(y26_heap_item* items, int count)
+{
+    if (count > 1) y26_heap_qsort_range(items, 0, count - 1);
+}
+
 /* Stage 1: per-anchor best-class score, then exact top-k of those maxima.
- * Streaming insertion keeps the k largest best scores; each anchor enters the
- * set at most once and replaces the current running minimum only when strictly
- * better (deterministic, ties keep earlier anchors). */
+ * Size-k min-heap over the best scores; strictly-greater replacement keeps
+ * ties at the earliest anchors, exactly like the previous streaming scan but
+ * O(anchor_total * log k) instead of O(anchor_total * k). */
 static int y26_select_top_anchors(const ivf32* scores, size_t anchor_total,
                                   int num_classes, int topk_count,
                                   int* selected_anchors, ivf32* best_scores)
@@ -92,24 +214,25 @@ static int y26_select_top_anchors(const ivf32* scores, size_t anchor_total,
         best_scores[anchor] = best_val;
     }
 
-    int filled = 0;
-    for (size_t anchor = 0; anchor < anchor_total; anchor++) {
-        if (filled < topk_count) {
-            selected_anchors[filled++] = (int)anchor;
-            continue;
-        }
-        int min_pos = 0;
-        for (int j = 1; j < filled; j++)
-            if (best_scores[selected_anchors[j]] < best_scores[selected_anchors[min_pos]])
-                min_pos = j;
-        if (best_scores[anchor] > best_scores[selected_anchors[min_pos]])
-            selected_anchors[min_pos] = (int)anchor;
-    }
-    return filled;
+    /* Stage 1's output is consumed only as an UNORDERED set: stage 2 gathers
+       each selected anchor's full class row and re-ranks by value, so the
+       anchor order here does not affect the final result (matching the old
+       streaming implementation, which also left the array unsorted). */
+    y26_heap_item* heap =
+        (y26_heap_item*)fiv_malloc((size_t)topk_count * sizeof(y26_heap_item));
+    if (!heap) return -1;
+    y26_heap_select(best_scores, (int)anchor_total, topk_count, heap);
+
+    int kept = topk_count < (int)anchor_total ? topk_count : (int)anchor_total;
+    for (int r = 0; r < kept; r++) selected_anchors[r] = heap[r].id;
+    fiv_free(heap);
+    return kept;
 }
 
 /* Stage 2: exact top-k over the flattened topk_count * num_classes candidate
- * scores (each selected anchor contributes its full class row). */
+ * scores (each selected anchor contributes its full class row). Size-k min-heap
+ * over the candidate buffer: O(topk*num_classes*log topk) instead of the
+ * previous O(topk^2 * num_classes) repeated full scan. */
 static int y26_topk_flatten(const ivf32* scores, int num_classes,
                             const int* selected_anchors, int topk_count,
                             ivf32* out_score, int* out_class, int* out_anchor)
@@ -123,34 +246,24 @@ static int y26_topk_flatten(const ivf32* scores, int num_classes,
                (size_t)num_classes * sizeof(ivf32));
     }
 
-    int* taken = (int*)fiv_calloc(candidate_count, sizeof(int));
-    if (!taken) {
+    y26_heap_item* heap =
+        (y26_heap_item*)fiv_malloc((size_t)topk_count * sizeof(y26_heap_item));
+    if (!heap) {
         fiv_free(candidate_buf);
         return -1;
     }
-    int kept = 0;
-    for (int rank = 0; rank < topk_count && kept < topk_count; rank++) {
-        ivf32  best_val = -1.0e30f;
-        size_t best_pos = 0;
-        int    found    = 0;
-        for (size_t pos = 0; pos < candidate_count; pos++) {
-            if (taken[pos]) continue;
-            if (!found || candidate_buf[pos] > best_val) {
-                best_val = candidate_buf[pos];
-                best_pos = pos;
-                found    = 1;
-            }
-        }
-        if (!found) break;
-        taken[best_pos] = 1;
-        out_score[rank] = best_val;
-        out_class[rank] = (int)(best_pos % (size_t)num_classes);
-        out_anchor[rank] = selected_anchors[best_pos / (size_t)num_classes];
-        kept++;
+    y26_heap_select(candidate_buf, (int)candidate_count, topk_count, heap);
+    y26_heap_qsort_desc(heap, topk_count);
+
+    for (int rank = 0; rank < topk_count; rank++) {
+        int pos             = heap[rank].id;
+        out_score[rank]     = heap[rank].value;
+        out_class[rank]     = pos % num_classes;
+        out_anchor[rank]    = selected_anchors[pos / num_classes];
     }
-    fiv_free(taken);
+    fiv_free(heap);
     fiv_free(candidate_buf);
-    return kept;
+    return topk_count;
 }
 
 /* Shared decode: box/class heads are mandatory, coef_heads optional (seg mask

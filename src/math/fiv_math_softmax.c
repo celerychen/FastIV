@@ -196,3 +196,104 @@ void fiv_math_softmax_avx2_ps(ivf32* dst, int dst_stride,
 }
 
 #endif  /* FIV_USE_AVX2 */
+
+
+/* ==================== Softmax (NEON row kernel, FIV_32F1) ====================
+   Math is the same stable 3-pass algorithm as the scalar row (and its AVX2
+   sibling); the row pass runs 8 floats/iter: pass 2 uses the dual-vector
+   exp128_ps2 (two 4-lane chains share packed coefficients) and pass 1/3 use
+   plain vmaxq/vmulq pairs. n<8 rows fall back to scalar inside the kernel. */
+#if defined(FIV_USE_ARM_NEON)
+
+#include "fiv_math_kernels.h"
+
+/* Normalize ONE row in place, three passes over x[0..n-1]:
+     1) max,    8 floats/iter (two float32x4_t lanes);
+     2) exp(x - max) write-back + sum, using the dual-vector interleaved,
+        packed-coefficient exp128_ps2;
+     3) in-place division by sum. */
+static void fiv_math_softmax_row_neon_ps(ivf32* x, size_t n)
+{
+    if (n == 0) return;
+
+    /* Pass 1: max, 8 floats/iter */
+    float max_val;
+    if (n >= 8) {
+        float32x4_t vmax0 = vld1q_f32(x);
+        float32x4_t vmax1 = vld1q_f32(x + 4);
+        size_t i = 8;
+        for (; i + 8 <= n; i += 8) {
+            vmax0 = vmaxq_f32(vmax0, vld1q_f32(x + i));
+            vmax1 = vmaxq_f32(vmax1, vld1q_f32(x + i + 4));
+        }
+        float32x4_t vmax = vmaxq_f32(vmax0, vmax1);
+        for (; i + 4 <= n; i += 4)
+            vmax = vmaxq_f32(vmax, vld1q_f32(x + i));
+        max_val = fiv_math_hmax128_ps(vmax);
+        for (; i < n; i++)
+            max_val = fmaxf(max_val, x[i]);
+    } else {
+        max_val = x[0];
+        for (size_t i = 1; i < n; i++)
+            max_val = fmaxf(max_val, x[i]);
+    }
+
+    /* Pass 2: exp(x-m) write-back + accumulate sum. exp128_ps2 processes
+       2 blocks (8 floats) at once with two interleaved exp chains sharing
+       the packed constants. */
+    const float32x4_t vmax_bc = vdupq_n_f32(max_val);
+    float32x4_t vs0 = vdupq_n_f32(0.0f);
+    float32x4_t vs1 = vdupq_n_f32(0.0f);
+    size_t j = 0;
+    for (; j + 8 <= n; j += 8) {
+        float32x4_t b0 = vsubq_f32(vld1q_f32(x + j),     vmax_bc);
+        float32x4_t b1 = vsubq_f32(vld1q_f32(x + j + 4), vmax_bc);
+        fiv_f32x4x2 e  = fiv_math_exp128_ps2(b0, b1);
+        vst1q_f32(x + j,     e.a);
+        vst1q_f32(x + j + 4, e.b);
+        vs0 = vaddq_f32(vs0, e.a);
+        vs1 = vaddq_f32(vs1, e.b);
+    }
+    float32x4_t vsum = vaddq_f32(vs0, vs1);
+    for (; j + 4 <= n; j += 4) {
+        float32x4_t e = fiv_math_exp128_ps(vsubq_f32(vld1q_f32(x + j), vmax_bc));
+        vst1q_f32(x + j, e);
+        vsum = vaddq_f32(vsum, e);
+    }
+    float sum = fiv_math_hsum128_ps(vsum);
+    for (; j < n; j++) {
+        float e = expf(x[j] - max_val);
+        x[j] = e;
+        sum += e;
+    }
+
+    /* Pass 3: in-place division by sum (exact division, 8 floats/iter) */
+    const float inv = 1.0f / sum;
+    const float32x4_t vinv = vdupq_n_f32(inv);
+    size_t k = 0;
+    for (; k + 8 <= n; k += 8) {
+        vst1q_f32(x + k,     vmulq_f32(vld1q_f32(x + k),     vinv));
+        vst1q_f32(x + k + 4, vmulq_f32(vld1q_f32(x + k + 4), vinv));
+    }
+    for (; k + 4 <= n; k += 4)
+        vst1q_f32(x + k, vmulq_f32(vld1q_f32(x + k), vinv));
+    for (; k < n; k++)
+        x[k] *= inv;
+}
+
+/* Full-matrix NEON backend: same per-row copy semantics as the AVX2 path. */
+void fiv_math_softmax_neon_ps(ivf32* dst, int dst_stride,
+                             const ivf32* src, int src_stride,
+                             size_t rows, size_t cols)
+{
+    const int out_of_place = (dst != src);
+    for (size_t i = 0; i < rows; i++) {
+        ivf32*       drow = dst + (size_t)dst_stride * i;
+        const ivf32* srow = src + (size_t)src_stride * i;
+        if (out_of_place)
+            memcpy(drow, srow, cols * sizeof(ivf32));
+        fiv_math_softmax_row_neon_ps(drow, cols);
+    }
+}
+
+#endif  /* FIV_USE_ARM_NEON */

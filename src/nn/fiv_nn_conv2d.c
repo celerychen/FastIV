@@ -519,12 +519,21 @@ static fiv_ret fiv_conv2d_compute(fiv_conv2d_node* n, fiv_tensor_hdr* out, fiv_t
 fiv_ret fiv_conv2d_node_forward(void* op_state, void* output, void* input)
 {
     fiv_conv2d_node* n = (fiv_conv2d_node*)op_state;
+    /* training forward / gradient checks: stay on the direct 3x3 s1 kernel so
+       backward numerics stay exact (Winograd is ~1e-6 off the direct path). */
+    fiv_conv2d_std_3x3_s1_set_inference(0);
     return fiv_conv2d_compute(n, (fiv_tensor_hdr*)output, (fiv_tensor_hdr*)input);
 }
 
 fiv_ret fiv_conv2d_node_inference(void* op_state, void* output, void* input)
 {
-    return fiv_conv2d_compute((fiv_conv2d_node*)op_state, (fiv_tensor_hdr*)output, (fiv_tensor_hdr*)input);
+    /* engine inference: dense 3x3 stride-1 convs take the Winograd F(2,3) fast
+       path by default (policy lives in fiv_nn_3x3_conv2d.c). */
+    fiv_conv2d_std_3x3_s1_set_inference(1);
+    fiv_ret ret = fiv_conv2d_compute((fiv_conv2d_node*)op_state,
+                                     (fiv_tensor_hdr*)output, (fiv_tensor_hdr*)input);
+    fiv_conv2d_std_3x3_s1_set_inference(0);
+    return ret;
 }
 
 /* Conv backward (all accumulations, engine resets grads per step), generalized
